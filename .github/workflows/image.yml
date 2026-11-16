@@ -43,10 +43,23 @@ jobs:
             sleep 1
           done
           curl --silent --fail http://127.0.0.1:8000/healthz
-          test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
-            --header 'Host: evil.example' http://127.0.0.1:8000/healthz)" != "000"
-          docker logs smoke
-          docker rm --force smoke
+          # The six tools answer over MCP.
+          tools=$(curl --silent --fail http://127.0.0.1:8000/mcp \
+            --header 'Content-Type: application/json' \
+            --header 'Accept: application/json, text/event-stream' \
+            --data '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | jq '.result.tools | length')
+          test "$tools" = "6"
+          # A request that names another host is refused.
+          refused=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            http://127.0.0.1:8000/mcp --header 'Host: evil.example' \
+            --header 'Content-Type: application/json' \
+            --header 'Accept: application/json, text/event-stream' \
+            --data '{"jsonrpc":"2.0","id":1,"method":"tools/list"}')
+          test "$refused" = "421"
+      # Shown whether the checks passed or not: when one fails, this is where the reason is.
+      - name: Container log
+        if: always()
+        run: docker logs smoke || true
 
       - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
