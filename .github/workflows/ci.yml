@@ -28,7 +28,7 @@ jobs:
       - name: Tests
         shell: bash # with pipefail, so a failing test run fails the step despite the pipe
         env:
-          COLUMNS: "200" # room for the reason on each line of pytest's summary
+          COLUMNS: "500" # room for the reason on each line of pytest's summary
         run: uv run pytest -q 2>&1 | tee pytest.log
       # Each failed test becomes an annotation, so it shows at the top of the run without
       # anyone having to open the log.

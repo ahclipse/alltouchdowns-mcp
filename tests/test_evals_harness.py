@@ -32,14 +32,19 @@ def rows(out: Path) -> list[dict[str, Any]]:
 # --- The committed cases ---------------------------------------------------------------------
 
 
+def reported_failures(capsys: pytest.CaptureFixture[str]) -> list[str]:
+    """The reasons a check printed, so a failing test says why and not just that."""
+    return [line for line in capsys.readouterr().out.splitlines() if line.startswith("FAILED")]
+
+
 def test_committed_cases_pass_the_free_preflight(capsys: pytest.CaptureFixture[str]) -> None:
-    assert evals_main(["preflight"]) == 0, capsys.readouterr().out
+    assert evals_main(["preflight"]) == 0, reported_failures(capsys)
 
 
 def test_oracle_scores_everything_and_null_scores_nothing(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    assert evals_main(["selftest"]) == 0, capsys.readouterr().out
+    assert evals_main(["selftest"]) == 0, reported_failures(capsys)
 
 
 def test_cases_are_a_usable_set() -> None:

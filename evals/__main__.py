@@ -117,20 +117,33 @@ def _selftest(args: argparse.Namespace) -> int:
             )
             code = runner.run(config)
             summary = json.loads((out / "summary.json").read_text())
-            if code != 0 or summary["error_attempts"]:
-                problems.append(f"{model}: not a clean run ({summary['error_attempts']} errors)")
+            errors = report.read_jsonl(out / "errors.jsonl")
+            if code != 0 or errors:
+                kinds = sorted({f"{e['class']}: {e['detail'][:120]}" for e in errors})
+                problems.append(
+                    f"{model}: not a clean run, {len(errors)} errors: {'; '.join(kinds[:3])}"
+                )
             if summary["correct_and_grounded"] != expected:
                 rows = report.read_jsonl(out / "results.jsonl")
                 off = [
-                    row["case_id"]
+                    _what_went_wrong(row)
                     for row in rows
                     if (row["correct"] and row["grounded"]) != bool(expected)
                 ]
-                problems.append(f"{model}: expected {expected:.0%}, cases off: {off[:10]}")
+                problems.append(f"{model}: expected {expected:.0%}, cases off: {off[:6]}")
     for problem in problems:
         print(f"FAILED: {problem}")
     print("self-test passed" if not problems else "self-test FAILED")
     return 1 if problems else 0
+
+
+def _what_went_wrong(row: dict) -> str:
+    """One trial's outcome in a few words, for the self-test's failure report."""
+    outcome = row["failure"] or ("right but not grounded" if not row["grounded"] else "passed")
+    failed_calls = sorted({str(c["error_code"]) for c in row["tool_calls"] if c["is_error"]})
+    return f"{row['case_id']}: {outcome}" + (
+        f", tool errors {failed_calls}" if failed_calls else ""
+    )
 
 
 def _run(args: argparse.Namespace) -> int:
