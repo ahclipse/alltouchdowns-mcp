@@ -2,7 +2,7 @@
 #
 # Base images are pinned by digest, so a rebuild cannot silently pick up a different image
 # under the same tag. Dependabot proposes the new digest when a tag moves.
-FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b AS build
+FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928 AS build
 COPY --from=ghcr.io/astral-sh/uv:0.13.8@sha256:5cc1805e2426484abca4ad46ea783bab281fdb225fd82d8ce6d66a81254bac85 /uv /bin/uv
 WORKDIR /app
 # Use the image's own Python. A downloaded one would live outside the folder that is copied
@@ -17,7 +17,7 @@ COPY src ./src
 RUN uv sync --locked --no-dev --no-editable
 
 
-FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
+FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928
 # A fixed, unprivileged user. /data is where the database volume is mounted.
 RUN useradd --uid 10001 --no-create-home app && mkdir /data && chown 10001:10001 /data
 COPY --from=build /app/.venv /app/.venv
