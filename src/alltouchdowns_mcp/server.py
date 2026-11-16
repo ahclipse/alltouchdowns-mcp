@@ -98,7 +98,7 @@ data, is not offered: say so and suggest a narrower question.
 
 
 def create_server(settings: Settings) -> MCPServer:
-    with open_database(settings.db_path, settings.query_timeout_ms) as db:
+    with open_database(settings.db_path, settings.query_step_limit) as db:
         coverage = db.coverage
 
     gate = ExitGate()
@@ -126,7 +126,7 @@ def create_server(settings: Settings) -> MCPServer:
         return register
 
     def database():
-        return open_database(settings.db_path, settings.query_timeout_ms)
+        return open_database(settings.db_path, settings.query_step_limit)
 
     @tool("Find players")
     def find_players(

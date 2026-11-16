@@ -23,7 +23,9 @@ class Settings:
     allowed_hosts: tuple[str, ...] = _LOCAL_HOSTS
     allowed_origins: tuple[str, ...] = _LOCAL_ORIGINS
 
-    query_timeout_ms: int = 250
+    # The most work one call's queries may do, in steps of SQLite's virtual machine. The
+    # heaviest real call, an all-time leaderboard over 27 seasons, takes about 2 million.
+    query_step_limit: int = 20_000_000
     # /healthz reports a problem once the newest export is older than this.
     stale_after_hours: int = 36
 
@@ -64,7 +66,7 @@ class Settings:
             port=number("ATD_PORT", base.port),
             allowed_hosts=_csv(env.get("ATD_ALLOWED_HOSTS")) or base.allowed_hosts,
             allowed_origins=_csv(env.get("ATD_ALLOWED_ORIGINS")) or base.allowed_origins,
-            query_timeout_ms=number("ATD_QUERY_TIMEOUT_MS", base.query_timeout_ms),
+            query_step_limit=number("ATD_QUERY_STEP_LIMIT", base.query_step_limit),
             stale_after_hours=number("ATD_STALE_AFTER_HOURS", base.stale_after_hours),
             rate_limits=env.get("ATD_RATE_LIMITS", "on").lower() not in ("off", "0", "false"),
             anonymous_per_minute=number("ATD_ANONYMOUS_PER_MINUTE", base.anonymous_per_minute),

@@ -235,7 +235,10 @@ def test_a_cursor_does_not_survive_a_new_export(db: Database, tmp_path) -> None:
     conn.commit()
     conn.close()
 
-    with open_database(newer, timeout_ms=2000) as replaced, pytest.raises(ToolRefusal) as refusal:
+    with (
+        open_database(newer, step_limit=20_000_000) as replaced,
+        pytest.raises(ToolRefusal) as refusal,
+    ):
         search_touchdowns(replaced, team="KC", limit=5, cursor=cursor)
     assert refusal.value.code == "bad_cursor"
 

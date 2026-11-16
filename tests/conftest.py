@@ -218,7 +218,7 @@ def rows(path: Path, sql: str, *params: object) -> list[tuple]:
 
 @pytest.fixture
 def db() -> Iterator[Database]:
-    with open_database(FIXTURE_DB, timeout_ms=2000) as database:
+    with open_database(FIXTURE_DB, step_limit=20_000_000) as database:
         yield database
 
 
@@ -243,5 +243,5 @@ def edge_db(tmp_path: Path) -> Iterator[Database]:
     site.game(2025, 2, "KC", "NE", score=(42, 10))  # no touchdown rows: the source lost them
     out = tmp_path / "edge.db"
     build(site.save(), out, today=TODAY)
-    with open_database(out, timeout_ms=2000) as database:
+    with open_database(out, step_limit=20_000_000) as database:
         yield database

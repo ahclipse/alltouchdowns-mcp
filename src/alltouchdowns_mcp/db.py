@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import sqlite3
 import threading
-import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -22,10 +21,14 @@ from alltouchdowns_mcp.models import Source
 from alltouchdowns_mcp.teams import Teams
 
 # Tool calls run on worker threads. Letting them all query at once does not make any of them
-# faster (Python runs one thread at a time), it only makes each one slower until they all hit
-# the deadline together. So a few run and the rest wait their turn.
+# faster (Python runs one thread at a time), it only makes each one slower. So a few run and
+# the rest wait their turn.
 _QUERY_SLOTS = threading.BoundedSemaphore(4)
 _MAX_WAIT_FOR_SLOT_SECONDS = 5.0
+
+# How often SQLite reports back while a query runs, in steps of its virtual machine. See
+# `open_database` for what the reports are used for.
+STEPS_PER_CHECK = 100_000
 
 
 @dataclass(frozen=True)
@@ -98,22 +101,34 @@ def read_meta(path: Path) -> dict[str, str]:
 
 
 @contextmanager
-def open_database(path: Path, timeout_ms: int) -> Iterator[Database]:
-    """Open the database for one tool call, with a deadline on the queries it runs."""
+def open_database(path: Path, step_limit: int) -> Iterator[Database]:
+    """Open the database for one tool call, with a limit on the work its queries may do.
+
+    The limit is on work, not on time. SQLite counts the steps its virtual machine executes,
+    and a call whose queries pass `step_limit` is abandoned. A clock would be the obvious
+    choice, but on a busy host it abandons perfectly ordinary queries: the same query takes
+    ten times as long when the machine is doing something else. Counting steps gives the same
+    answer on every machine, however loaded.
+    """
     if not _QUERY_SLOTS.acquire(timeout=_MAX_WAIT_FOR_SLOT_SECONDS):
         raise ToolRefusal("busy")
     try:
         conn = _connect(path)
         try:
-            # The clock starts here, after the wait for a slot, so a queue is not mistaken
-            # for a slow query. SQLite calls the handler every 1,000 steps and abandons the
-            # query when it returns true.
-            deadline = time.monotonic() + timeout_ms / 1000
-            conn.set_progress_handler(lambda: time.monotonic() > deadline, 1000)
+            checks_left = step_limit // STEPS_PER_CHECK
+
+            def over_the_limit() -> bool:
+                nonlocal checks_left
+                checks_left -= 1
+                return checks_left < 0
+
+            # SQLite calls this every STEPS_PER_CHECK steps of a query, and abandons the query
+            # when it returns true.
+            conn.set_progress_handler(over_the_limit, STEPS_PER_CHECK)
             yield Database(conn, Teams.load(conn), Coverage.load(conn))
         except sqlite3.OperationalError as error:
             if "interrupted" in str(error):
-                raise ToolRefusal("timeout") from error
+                raise ToolRefusal("too_broad") from error
             raise
         finally:
             conn.close()

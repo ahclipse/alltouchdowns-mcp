@@ -14,7 +14,7 @@ Ask an assistant connected to it things like:
 
 This is a portfolio project. It is small on purpose, so that every part can be read and explained:
 
-- **A production MCP server in Python**, on the official `mcp` SDK, with typed tool results, a query deadline, rate limiting and OAuth.
+- **A production MCP server in Python**, on the official `mcp` SDK, with typed tool results, a limit on the work a query may do, rate limiting and OAuth.
 - **An eval suite with real ground truth.** An LLM agent is given the server's tools and about 100 questions. Each answer is graded against SQL run on the same database, not against a stored answer key.
 - **A data pipeline with rules that can be read in one place**: what may be published, what is held back, and what is never copied.
 

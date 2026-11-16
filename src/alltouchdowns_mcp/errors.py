@@ -20,7 +20,7 @@ ErrorCode = Literal[
     "unknown_player",
     "not_found",
     "bad_cursor",
-    "timeout",
+    "too_broad",
     "busy",
     "internal_error",
 ]
@@ -33,7 +33,7 @@ _MESSAGES: dict[ErrorCode, str] = {
     "unknown_player": "No player has that slug. Call find_players to look the slug up.",
     "not_found": "No finished game matches.",
     "bad_cursor": "The cursor is not valid for this search. Start again without a cursor.",
-    "timeout": "The query took too long. Try again, or add a filter to narrow it.",
+    "too_broad": "That search covers too much to answer. Add a filter to narrow it.",
     "busy": "The server is busy. Try again in a moment.",
     "internal_error": "The response could not be produced.",
 }

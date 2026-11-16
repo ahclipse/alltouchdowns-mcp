@@ -91,4 +91,7 @@ def _last_tool_result(messages: list[dict[str, Any]]) -> dict[str, Any]:
     content = messages[-1]["content"]
     if not isinstance(content, list):
         return {}
-    return json.loads(content[-1]["content"])
+    try:
+        return json.loads(content[-1]["content"])
+    except ValueError:
+        return {}  # the call failed and returned an error sentence, which the grader will see

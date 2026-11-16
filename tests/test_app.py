@@ -174,12 +174,12 @@ def test_settings_from_environment() -> None:
             "ATD_HOST": "0.0.0.0",
             "ATD_PORT": "9000",
             "ATD_ALLOWED_HOSTS": "mcp.example.com, mcp.example.com:*",
-            "ATD_QUERY_TIMEOUT_MS": "100",
+            "ATD_QUERY_STEP_LIMIT": "100000",
         }
     )
 
     assert settings.db_path == Path("/data/mcp.db")
-    assert (settings.host, settings.port, settings.query_timeout_ms) == ("0.0.0.0", 9000, 100)
+    assert (settings.host, settings.port, settings.query_step_limit) == ("0.0.0.0", 9000, 100000)
     assert settings.allowed_hosts == ("mcp.example.com", "mcp.example.com:*")
     assert settings.allowed_origins  # falls back to the local defaults
 
