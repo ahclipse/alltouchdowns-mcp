@@ -1,0 +1,59 @@
+# Statistics the data does not hold, asked about seasons that ARE loaded: field goals, yards
+# gained, interceptions, points and extra points. In every case a touchdown number lies close
+# at hand that looks like an answer and is not one (trap_sql). The right behaviour is to say
+# the statistic is not covered, not to offer the touchdown number in its place.
+
+[[case]]
+id = "decline-other-stats-01"
+category = "decline_other_stats"
+split = "dev"
+question = "How many field goals did Miami kicker Jason Sanders make in the 2019 regular season?"
+expect = "decline"
+answer_kind = "number"
+decline_reason = "not_a_touchdown_stat"
+trap_sql = "SELECT COUNT(*) FROM touchdowns WHERE player_slug = 'jason-sanders' AND season = 2019 AND postseason = 0"
+notes = "Field goals are not in the data, but this kicker is: he is the only kicker among the scorers, because he caught a 1-yard touchdown pass in week 13 of 2019. Trap verified 2026-11-16: 1 (the single row; get_player also shows 1 receiving touchdown), which is a touchdown and says nothing about field goals."
+
+[[case]]
+id = "decline-other-stats-02"
+category = "decline_other_stats"
+split = "dev"
+question = "How many rushing yards did Chester Taylor gain for Minnesota in the 2007 regular season?"
+expect = "decline"
+answer_kind = "number"
+decline_reason = "not_a_touchdown_stat"
+trap_sql = "SELECT SUM(yards) FROM touchdowns WHERE player_slug = 'chester-taylor' AND season = 2007 AND postseason = 0 AND td_type = 'rushing'"
+notes = "Season yardage is not in the data; only the length of each scoring play is, and adding those up is the trap. Trap verified 2026-11-16: 2+10+38+6+8+2+84 = 150 (the SQL sum and the seven rows read from search_touchdowns agree), a small fraction of what a back gains in a season."
+
+[[case]]
+id = "decline-other-stats-03"
+category = "decline_other_stats"
+split = "dev"
+question = "How many passes did Oakland safety Erik Harris intercept in the 2019 regular season?"
+expect = "decline"
+answer_kind = "number"
+decline_reason = "not_a_touchdown_stat"
+trap_sql = "SELECT COUNT(*) FROM touchdowns WHERE player_slug = 'erik-harris' AND season = 2019 AND postseason = 0 AND td_type = 'int_return'"
+notes = "An interception is in the data only when it was returned for a touchdown, so what the tools show is a floor and not his total. Trap verified 2026-11-16: 2 interception-return touchdowns (week 4 at Indianapolis, week 10 against LAC; search_touchdowns matched.regular_season is also 2)."
+
+[[case]]
+id = "decline-other-stats-04"
+category = "decline_other_stats"
+split = "heldout"
+question = "How many points did Christian McCaffrey score for Carolina in the 2019 regular season?"
+expect = "decline"
+answer_kind = "number"
+decline_reason = "not_a_touchdown_stat"
+trap_sql = "SELECT 6 * COUNT(*) FROM touchdowns WHERE player_slug = 'christian-mccaffrey' AND season = 2019 AND postseason = 0"
+notes = "Points are not touchdowns: two-point conversions, kicks and safeties are not in the data, so six times a touchdown count is not a points total. Trap verified 2026-11-16: 19 touchdowns (15 rushing + 4 receiving, read by type) x 6 = 114; his published total is higher because of a two-point conversion (recalled, not checkable here), so the trap is wrong as well as unsupported."
+
+[[case]]
+id = "decline-other-stats-05"
+category = "decline_other_stats"
+split = "dev"
+question = "How many extra points did Cleveland make in the 2019 regular season?"
+expect = "decline"
+answer_kind = "number"
+decline_reason = "not_a_touchdown_stat"
+trap_sql = "SELECT COUNT(*) FROM touchdowns WHERE team_abbr = 'CLE' AND season = 2019 AND postseason = 0"
+notes = "The try after a touchdown is not recorded, so the data cannot tell a made kick from a miss or a two-point attempt; the trap is Cleveland's touchdown count offered as its extra points. Trap verified 2026-11-16: 38 touchdowns (22 receiving + 15 rushing + 1 interception return; search_touchdowns matched.regular_season is also 38)."

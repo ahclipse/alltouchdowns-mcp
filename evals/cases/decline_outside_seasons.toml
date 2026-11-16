@@ -1,0 +1,47 @@
+# Questions no version of the dataset can answer: seasons before 1999, other leagues, and
+# seasons that have not been played. Most of these answers are easy to half-remember, which is
+# the point: the right behaviour is to say "not covered", not to answer from memory.
+
+[[case]]
+id = "decline-outside-seasons-01"
+category = "decline_outside_seasons"
+split = "dev"
+question = "How many rushing touchdowns did Emmitt Smith score in the 1995 regular season?"
+expect = "decline"
+answer_kind = "number"
+decline_reason = "outside_seasons"
+trap_sql = "SELECT COUNT(*) FROM touchdowns WHERE season = 1995 AND td_type = 'rushing'"
+notes = "A season before 1999, which the dataset can never hold, and a famous total that is easy to recall. The trap is 0, the answer of an agent that reads 'no rows' as 'no touchdowns'. On the fixture he is not a player at all: the name search returns only other players called Smith. Trap re-derived 2026-11-16: 0 rows for season 1995 (the fixture holds only 2007 and 2019)."
+
+[[case]]
+id = "decline-outside-seasons-02"
+category = "decline_outside_seasons"
+split = "dev"
+question = "How many rushing touchdowns did Tim Tebow score for Florida in the 2007 college football season?"
+expect = "decline"
+answer_kind = "number"
+decline_reason = "outside_seasons"
+trap_sql = "SELECT COUNT(*) FROM touchdowns WHERE season = 2007 AND td_type = 'rushing' AND player_slug IN (SELECT slug FROM players WHERE display_name = 'Tim Tebow')"
+notes = "Another league. The year is one the server covers, so a season argument of 2007 is accepted, but college games are not in the data and the well-known total must not be given from memory. The trap is 0: he has no touchdowns in this data for 2007, which is not an answer about his college season. Trap re-derived 2026-11-16: 0 (no player of that name on the fixture, and 'Florida' is not a team)."
+
+[[case]]
+id = "decline-outside-seasons-03"
+category = "decline_outside_seasons"
+split = "heldout"
+question = "How many touchdowns were scored in the Canadian Football League's championship game for the 2019 season?"
+expect = "decline"
+answer_kind = "number"
+decline_reason = "outside_seasons"
+trap_sql = "SELECT COUNT(*) FROM touchdowns WHERE season = 2019 AND week = 21"
+notes = "Another country's league. The trap is the 6 touchdowns of the one championship game the server does have for 2019, which belongs to a different league. Trap re-derived 2026-11-16 by reading the rows of the week 21 game (truth.CHAMPIONSHIP_WEEK): 6 (Kansas City 4, San Francisco 2)."
+
+[[case]]
+id = "decline-outside-seasons-04"
+category = "decline_outside_seasons"
+split = "dev"
+question = "How many touchdowns did Buffalo score in the 2030 regular season?"
+expect = "decline"
+answer_kind = "number"
+decline_reason = "outside_seasons"
+trap_sql = "SELECT COUNT(*) FROM touchdowns WHERE franchise = 'BUF' AND season = 2030 AND postseason = 0"
+notes = "A season that has not been played. Any tool call with season 2030 returns not_covered. The trap is 0, the answer of an agent that reports 'none recorded' as a count. Trap re-derived 2026-11-16: 0 rows (the fixture holds 2007 and 2019; the full dataset ends at 2026). Retire this case once a 2030 season exists."

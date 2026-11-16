@@ -1,0 +1,121 @@
+name: Evals
+
+# Runs the eval suite against real models, which costs money. It never runs on a pull
+# request, so code from outside the repository can never reach the API key.
+#
+#   push to main        a cheap smoke run on the smallest model, one trial per case
+#   weekly / on demand  the scored run: three models, compared with the stored baseline
+#
+# The automatic runs are opt-in: they are skipped until the repository variable EVALS_ENABLED
+# is set to "true" (Settings > Secrets and variables > Actions > Variables). A run started by
+# hand needs no switch. Either way the key must be in the "evals" environment.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "evals/**"
+      - "tests/fixtures/**"
+      - "uv.lock"
+  schedule:
+    - cron: "17 14 * * 2" # Tuesdays, 14:17 UTC
+  workflow_dispatch:
+    inputs:
+      reps:
+        description: Trials per case
+        default: "3"
+      max_cost_usd:
+        description: Stop a model's run before it spends more than this
+        default: "8"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: evals-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    if: github.event_name == 'push' && vars.EVALS_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: evals # holds ANTHROPIC_API_KEY; restricted to the main branch
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - run: uv sync --locked --extra evals
+      - run: uv run python -m evals preflight
+      - run: uv run python -m evals selftest
+      - name: Smoke run
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: >
+          uv run python -m evals run --model claude-haiku-5-5 --reps 1
+          --max-cost-usd 1 --out evals/runs/smoke
+      - name: Summary
+        if: always()
+        run: cat evals/runs/smoke/summary.md >> "$GITHUB_STEP_SUMMARY" || true
+      # Artifacts of a public repository can be downloaded by anyone signed in to GitHub, so
+      # only a copy without the model's own words is uploaded: scores and ids, no transcripts.
+      - name: Copy without model text
+        if: always()
+        run: uv run python -m evals share evals/runs/smoke evals/shared/smoke
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: eval-smoke
+          path: evals/shared/smoke
+          retention-days: 7
+
+  scored:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'schedule' && vars.EVALS_ENABLED == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: evals
+    strategy:
+      fail-fast: false
+      matrix:
+        model: [claude-opus-5-5, claude-sonnet-5-5, claude-haiku-5-5]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - run: uv sync --locked --extra evals
+      - run: uv run python -m evals preflight
+      - run: uv run python -m evals selftest
+      - name: Run
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          REPS: ${{ inputs.reps || '3' }}
+          MAX_COST: ${{ inputs.max_cost_usd || '8' }}
+        run: >
+          uv run python -m evals run --model ${{ matrix.model }} --reps "$REPS"
+          --max-cost-usd "$MAX_COST" --out evals/runs/${{ matrix.model }}
+      - name: Summary
+        if: always()
+        run: cat evals/runs/${{ matrix.model }}/summary.md >> "$GITHUB_STEP_SUMMARY" || true
+      # As in the smoke job: transcripts are free text written by a model and are never
+      # uploaded. The artifact and the job summary hold only numbers and ids.
+      - name: Copy without model text
+        if: always()
+        run: >
+          uv run python -m evals share evals/runs/${{ matrix.model }}
+          evals/shared/${{ matrix.model }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: eval-${{ matrix.model }}
+          path: evals/shared/${{ matrix.model }}
+          retention-days: 30
+      # Last, so the summary and results are saved even when the gate fails.
+      # Exit 1 = below the baseline's gate. Exit 2 = not a valid measurement.
+      - name: Gate
+        if: hashFiles(format('evals/baselines/{0}.json', matrix.model)) != ''
+        # Naming the shell makes GitHub run it with pipefail. Without that the step would
+        # report the exit code of `tee`, and the gate could never fail the job.
+        shell: bash
+        run: >
+          uv run python -m evals gate evals/runs/${{ matrix.model }}
+          --baseline evals/baselines/${{ matrix.model }}.json | tee -a "$GITHUB_STEP_SUMMARY"

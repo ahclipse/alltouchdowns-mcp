@@ -1,0 +1,92 @@
+# Touchdowns a quarterback scored himself: his own runs, and the rare pass he caught. These
+# are the mirror image of the decline cases about passes thrown. The data does hold these
+# counts, so the right behaviour is to answer, not to say "passes are not covered".
+#
+# The subjects are backups and starters on weak teams, and cases 02 to 04 ask for opponents,
+# games or players instead of a count, so that a remembered stat line answers nothing. All
+# four turn out to be about runs: the only three touchdown catches by a quarterback in the
+# fixture seasons are two famous plays and the one decline_passes_thrown.toml uses as a trap.
+
+[[case]]
+id = "quarterback-scoring-01"
+category = "quarterback_scoring"
+split = "dev"
+question = "How many rushing touchdowns did Minnesota quarterback Tarvaris Jackson score in the 2007 regular season?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = '''
+SELECT COUNT(*) FROM touchdowns t JOIN players p ON p.slug = t.player_slug
+WHERE p.display_name = 'Tarvaris Jackson' AND t.td_type = 'rushing'
+  AND t.season = 2007 AND t.postseason = 0
+'''
+expected_tools = [["find_players"], ["search_touchdowns", "get_player"]]
+max_calls = 4
+reference_calls = [
+  { tool = "find_players", args = { query = "Tarvaris Jackson" } },
+  { tool = "search_touchdowns", args = { player = "tarvaris-jackson", season = 2007, td_type = "rushing", season_type = "regular" } },
+]
+reference_path = "matched.regular_season"
+notes = "The plain case: a little-known quarterback's own rushing touchdowns. Truth re-derived 2026-11-16: 3 (one in week 2, two in week 16; Minnesota's rushing touchdowns that season split 12, 7 and 3 among three players)."
+
+[[case]]
+id = "quarterback-scoring-02"
+category = "quarterback_scoring"
+split = "dev"
+question = "Against which teams did Cincinnati quarterback Andy Dalton run for a touchdown himself in the 2019 regular season?"
+expect = "answer"
+answer_kind = "set"
+item_type = "team_abbr"
+truth_sql = '''
+SELECT DISTINCT CASE WHEN t.team_abbr = g.home_abbr THEN g.away_abbr ELSE g.home_abbr END
+FROM touchdowns t JOIN players p ON p.slug = t.player_slug JOIN games g ON g.game_id = t.game_id
+WHERE p.display_name = 'Andy Dalton' AND p.position = 'QB' AND t.td_type = 'rushing'
+  AND t.season = 2019 AND t.postseason = 0
+'''
+expected_tools = [["find_players"], ["search_touchdowns"]]
+max_calls = 4
+reference_calls = [
+  { tool = "find_players", args = { query = "Andy Dalton" } },
+  { tool = "search_touchdowns", args = { player = "andy-dalton", season = 2019, td_type = "rushing", season_type = "regular" } },
+]
+reference_path = "touchdowns[*].opponent.abbr"
+notes = "The starting quarterback of a team that won two games, asked which opponents he scored his own rushing touchdowns against: a set no stat line holds, read from the opponent of each row. 'Quarterback' next to 'touchdown' invites a reflex decline, but these are his own runs and the data has them. Truth re-derived 2026-11-16: BUF (week 3), BAL (week 6), JAX (week 7), CLE (week 17), one rushing touchdown against each; he has no other touchdown in the fixture."
+
+[[case]]
+id = "quarterback-scoring-03"
+category = "quarterback_scoring"
+split = "dev"
+question = "Leaving aside the passes he threw, in which games of the 2019 regular season did Indianapolis quarterback Jacoby Brissett score a touchdown himself?"
+expect = "answer"
+answer_kind = "set"
+item_type = "game_id"
+truth_sql = '''
+SELECT DISTINCT t.game_id FROM touchdowns t JOIN players p ON p.slug = t.player_slug
+WHERE p.display_name = 'Jacoby Brissett' AND p.position = 'QB'
+  AND t.season = 2019 AND t.postseason = 0
+'''
+expected_tools = [["find_players"], ["search_touchdowns"]]
+max_calls = 4
+reference_calls = [
+  { tool = "find_players", args = { query = "Jacoby Brissett" } },
+  { tool = "search_touchdowns", args = { player = "jacoby-brissett", season = 2019, season_type = "regular" } },
+]
+reference_path = "touchdowns[*].game_id"
+notes = "The question names passes thrown only to exclude them, so it must be answered with his own scores, and it asks for the games so that a remembered count is no help. A little-known starter; the question does not say how he scored, and all four of his touchdowns are runs. Indianapolis did not reach the playoffs. Truth re-derived 2026-11-16: 2019-05-IND-KC, 2019-11-JAX-IND, 2019-12-IND-HOU, 2019-16-CAR-IND, one rushing touchdown in each."
+
+[[case]]
+id = "quarterback-scoring-04"
+category = "quarterback_scoring"
+split = "heldout"
+question = "Which Miami quarterbacks ran for a touchdown themselves in the 2007 regular season?"
+expect = "answer"
+answer_kind = "set"
+item_type = "player_slug"
+truth_sql = '''
+SELECT DISTINCT t.player_slug FROM touchdowns t JOIN players p ON p.slug = t.player_slug
+WHERE p.position = 'QB' AND t.team_abbr = 'MIA' AND t.td_type = 'rushing'
+  AND t.season = 2007 AND t.postseason = 0
+'''
+expected_tools = [["get_leaderboard", "search_touchdowns"]]
+max_calls = 3
+reference_calls = [{ tool = "get_leaderboard", args = { season = 2007, team = "Miami", td_type = "rushing", limit = 50 } }]
+notes = "A team's rushing leaderboard gives each scorer's position; the agent keeps the quarterbacks. No reference_path because the answer is a filter of the six rows, not one field. Truth re-derived 2026-11-16: cleo-lemon (4) and john-beck (1, week 17); the other four Miami rushing scorers are running backs."

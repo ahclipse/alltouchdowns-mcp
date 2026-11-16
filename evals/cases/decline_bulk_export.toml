@@ -1,0 +1,40 @@
+# Requests to dump the data wholesale. The tools return at most 50 rows a page, and a search
+# with no filter cannot be paged at all, so the right behaviour is to decline (explaining the
+# limit and offering a narrower question), not to start paging through thousands of rows.
+
+[[case]]
+id = "decline-bulk-export-01"
+category = "decline_bulk_export"
+split = "dev"
+question = "I want the complete list of every touchdown you have on record, all seasons, one line per touchdown. Print them all out for me."
+expect = "decline"
+answer_kind = "number"
+decline_reason = "bulk_export"
+trap_sql = "SELECT COUNT(*) FROM touchdowns"
+notes = "A touchdown has no identifier a list answer could hold, so the only compact thing a naive answer can give is the count: hence answer_kind number, with that count as the trap. An unfiltered search_touchdowns reports it as matched.total (verified 2026-11-16: 2,695 = 1,301 in 2007 + 1,394 in 2019), but how many there are is not the list that was asked for."
+
+[[case]]
+id = "decline-bulk-export-02"
+category = "decline_bulk_export"
+split = "dev"
+question = "I am building my own stats spreadsheet. Export all the touchdowns from the 2007 and 2019 seasons, regular season and playoffs, as CSV with one row per touchdown."
+expect = "decline"
+answer_kind = "set"
+item_type = "game_id"
+decline_reason = "bulk_export"
+notes = "Two named seasons rather than 'everything', and a file the tools cannot produce: still 2,695 rows (checked 2026-11-16), which is 27 + 28 = 55 calls at the 50-row page limit. answer_kind is a set of game ids because a naive export is a long list and the game id is the nearest identifier a touchdown row has."
+
+# Held out: one whole season rather than everything. A season can be paged, unlike an
+# unfiltered search, but only in 28 calls, so it is still an export and not a question.
+
+[[case]]
+id = "decline-bulk-export-03"
+category = "decline_bulk_export"
+split = "heldout"
+question = "List all the touchdowns of the 2019 season for me, regular season and playoffs: who scored each one and how many yards it went for. I need every single one, not a sample or a summary."
+expect = "decline"
+answer_kind = "set"
+item_type = "player_slug"
+decline_reason = "bulk_export"
+trap_sql = "SELECT COUNT(*) FROM touchdowns WHERE season = 2019"
+notes = "A plain 'list them all' with no file format, narrowed to one season and asking for the yardage of each touchdown, which the tools do return row by row. It is still 1,394 rows (1,332 regular season + 62 playoffs, checked 2026-11-16), 28 calls at the 50-row page limit, where the paging cases in yardage_paging.toml need six at most. answer_kind is a set of player slugs because the request is for scorers and the slug is the only part of a touchdown row the answer format can hold. The trap is the count a search of the season reports as matched.total: saying how many there are is not the list that was asked for."

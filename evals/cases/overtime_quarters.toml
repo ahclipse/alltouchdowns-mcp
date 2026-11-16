@@ -1,0 +1,85 @@
+# Quarter and overtime filters. A touchdown's quarter is 1 to 4, and 5 means overtime. An
+# overtime touchdown is not a fourth-quarter touchdown, and overtime happens in the playoffs
+# as well as in the regular season.
+
+[[case]]
+id = "overtime-quarters-01"
+category = "overtime_quarters"
+split = "heldout"
+question = "Which games of the 2019 season had a touchdown scored in overtime? Include both the regular season and the playoffs."
+expect = "answer"
+answer_kind = "set"
+item_type = "game_id"
+truth_sql = "SELECT DISTINCT game_id FROM touchdowns WHERE season = 2019 AND quarter >= 5"
+expected_tools = [["search_touchdowns"]]
+max_calls = 3
+reference_calls = [{ tool = "search_touchdowns", args = { season = 2019, quarter = 5 } }]
+reference_path = "touchdowns[*].game_id"
+notes = "Five regular-season games and one playoff game (week 18), so an agent that only looks at the regular season misses one. Truth re-derived 2026-11-16 by listing every 2019 touchdown whose quarter is not 1 to 4 (each game a 6-point win): 2019-01-IND-LAC, 2019-09-TB-SEA, 2019-14-NYG-PHI, 2019-16-NYG-WAS, 2019-17-ATL-TB, 2019-18-MIN-NO."
+
+[[case]]
+id = "overtime-quarters-02"
+category = "overtime_quarters"
+split = "dev"
+question = "Which players scored an overtime touchdown in the 2007 regular season?"
+expect = "answer"
+answer_kind = "set"
+item_type = "player_slug"
+truth_sql = '''
+SELECT DISTINCT player_slug FROM touchdowns
+WHERE season = 2007 AND postseason = 0 AND quarter >= 5 AND player_slug IS NOT NULL
+'''
+expected_tools = [["search_touchdowns"]]
+max_calls = 3
+reference_calls = [{ tool = "search_touchdowns", args = { season = 2007, quarter = 5, season_type = "regular" } }]
+reference_path = "touchdowns[*].scorer.slug"
+notes = "Four overtime touchdowns by four players, one of them a linebacker credited with a 0-yard fumble return (the 2007 playoffs had no overtime touchdown). Truth re-derived 2026-11-16 by reading the rows: greg-jennings, tully-banta-cain, ladainian-tomlinson, greg-camarillo."
+
+[[case]]
+id = "overtime-quarters-03"
+category = "overtime_quarters"
+split = "dev"
+question = "In the 2007 regular-season game that Chicago played at Detroit, how many touchdowns were scored in the fourth quarter by the two teams combined?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = "SELECT COUNT(*) FROM touchdowns WHERE game_id = '2007-04-CHI-DET' AND quarter = 4"
+expected_tools = [["get_game", "search_touchdowns"]]
+max_calls = 4
+reference_calls = [
+  { tool = "list_games", args = { season = 2007, team = "Detroit" } },
+  { tool = "get_game", args = { game_id = "2007-04-CHI-DET" } },
+]
+notes = "No single field holds the answer: the agent finds the game (the teams also met in Chicago in week 8), reads its eight touchdowns and counts those in quarter 4, where a search filtered by team would count one team only. Truth re-derived 2026-11-16 by reading the get_game rows: one touchdown in the second quarter, then seven in the fourth (Detroit 5, Chicago 2), so 7, not the game total of 8."
+
+[[case]]
+id = "overtime-quarters-04"
+category = "overtime_quarters"
+split = "dev"
+question = "How many touchdowns did St. Louis score in the first quarter of its games in the 2007 regular season?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = "SELECT COUNT(*) FROM touchdowns WHERE season = 2007 AND postseason = 0 AND team_abbr = 'STL' AND quarter = 1"
+expected_tools = [["search_touchdowns"]]
+max_calls = 3
+reference_calls = [{ tool = "search_touchdowns", args = { team = "St. Louis", season = 2007, quarter = 1, season_type = "regular" } }]
+reference_path = "matched.regular_season"
+notes = "A quarter filter combined with a team and a season, for a franchise that has since moved (STL then, LA now) and played no playoff game in 2007. Truth re-derived 2026-11-16 by listing the franchise's first-quarter rows and counting them: 12."
+
+[[case]]
+id = "overtime-quarters-05"
+category = "overtime_quarters"
+split = "dev"
+question = "Which Green Bay players scored a fourth-quarter touchdown in the playoffs of the 2019 season?"
+expect = "answer"
+answer_kind = "set"
+item_type = "player_slug"
+truth_sql = '''
+SELECT DISTINCT player_slug FROM touchdowns
+WHERE season = 2019 AND postseason = 1 AND team_abbr = 'GB' AND quarter = 4
+  AND player_slug IS NOT NULL
+'''
+expected_tools = [["search_touchdowns", "get_game"]]
+max_calls = 3
+reference_calls = [{ tool = "search_touchdowns", args = { team = "Green Bay", season = 2019, quarter = 4, season_type = "postseason" } }]
+reference_path = "touchdowns[*].scorer.slug"
+notes = "A quarter filter together with a team and the playoffs, a combination no other case uses. Green Bay scored 7 touchdowns in its two playoff games (weeks 19 and 20, played in January 2020) and only the last 2 came in a fourth quarter, both in week 20; the scorer of one of them also scored in the third quarter of that game, and his slug is a numbered one. Without the playoff filter the search returns 9 more fourth-quarter touchdowns from the regular season. Truth re-derived 2026-11-16 by reading the quarter of each of Green Bay's 7 playoff rows (1, 2, 2, 3 in week 19; 3, 4, 4 in week 20): aaron-jones-2, jace-sternberger."

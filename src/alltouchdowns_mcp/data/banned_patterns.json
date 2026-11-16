@@ -1,0 +1,38 @@
+{
+  "ported_from": "the BANNED_PATTERNS list in the site's ingest code",
+  "note": "Regex sources and JavaScript flags, verbatim. Compiled with re.ASCII. Do not edit by hand: a drift check compares this file with the site.",
+  "patterns": [
+    {
+      "source": "\\bSuper Bowl\\b",
+      "flags": "i"
+    },
+    {
+      "source": "\\bWild Card\\b",
+      "flags": "i"
+    },
+    {
+      "source": "\\bPro Bowl\\b",
+      "flags": "i"
+    },
+    {
+      "source": "\\bDivisional\\b",
+      "flags": "i"
+    },
+    {
+      "source": "\\b(AFC|NFC) Championship\\b",
+      "flags": "i"
+    },
+    {
+      "source": "\\bSB\\s+[IVXLC]+\\b",
+      "flags": ""
+    },
+    {
+      "source": "\\b(49ers?|Niners?|Bears?|Bengals?|Bills|Broncos?|Browns|Buccaneers?|Bucs|Cardinals?|Cards|Chargers?|Bolts|Chiefs?|Colts?|Commanders?|Cowboys?|Dolphins?|Fins|Eagles?|Falcons?|Giants?|Jaguars?|Jags|Jets?|Lions?|Oilers?|Packers?|Panthers?|Patriots?|Pats|Raiders?|Rams?|Ravens?|Redskins?|Skins|Saints?|Seahawks?|Hawks|Steelers?|Texans?|Titans?|Vikings?)\\b",
+      "flags": ""
+    },
+    {
+      "source": "\\bFootball Team\\b",
+      "flags": ""
+    }
+  ]
+}

@@ -1,0 +1,71 @@
+# Questions about sets of games: a team's playoff run, a team's whole season, or everything
+# played in one week. The answers are counts of games or game ids, which come from list_games.
+
+[[case]]
+id = "game-lists-01"
+category = "game_lists"
+split = "dev"
+question = "Which of Seattle's away games in the 2007 season, regular season and playoffs combined, had eight or more touchdowns, counting both teams?"
+expect = "answer"
+answer_kind = "set"
+item_type = "game_id"
+truth_sql = '''
+SELECT t.game_id FROM touchdowns t JOIN games g ON g.game_id = t.game_id
+WHERE g.season = 2007 AND g.away_abbr = 'SEA'
+GROUP BY t.game_id
+HAVING COUNT(*) >= 8
+'''
+expected_tools = [["list_games"]]
+max_calls = 3
+reference_calls = [{ tool = "list_games", args = { season = 2007, team = "Seattle" } }]
+notes = "Picking games out of a team's whole season by where they were played and by their touchdown count, which no other case does. Seattle played 18 games, 9 of them away: 8 in the regular season and 1 in the playoffs. Two away games qualify, and one of the two is the playoff game, played in January 2008, so an agent that lists only the regular season misses it. A home game also had 8 touchdowns (2007-14-ARI-SEA) and must be left out, as must two away games with 7. No reference_path: the answer comes from reading which side Seattle is on and the touchdown count of each game listed. Truth re-derived 2026-11-16 by counting touchdown rows for each of the 9 game ids of the form 2007-NN-SEA-XXX (4, 2, 3, 7, 5, 7, 2, 10 and 8): 2007-17-SEA-ATL, 2007-19-SEA-GB."
+
+[[case]]
+id = "game-lists-02"
+category = "game_lists"
+split = "dev"
+question = "List every playoff game San Diego played in the 2007 season."
+expect = "answer"
+answer_kind = "set"
+item_type = "game_id"
+truth_sql = "SELECT game_id FROM games WHERE season = 2007 AND postseason = 1 AND 'SD' IN (away_abbr, home_abbr)"
+expected_tools = [["list_games"]]
+max_calls = 3
+reference_calls = [{ tool = "list_games", args = { season = 2007, team = "San Diego", season_type = "postseason" } }]
+reference_path = "games[*].game_id"
+notes = "The game ids of a playoff run by a team that has since moved. The ids carry the abbreviation of the time (SD), so an id built from today's abbreviation is wrong. Truth re-derived 2026-11-16 (San Diego's games dated January 2008): 2007-18-TEN-SD, 2007-19-SD-IND, 2007-20-SD-NE."
+
+[[case]]
+id = "game-lists-03"
+category = "game_lists"
+split = "dev"
+question = "Which game had the most touchdowns in week 8 of the 2019 regular season? If several games are tied for the most, list all of them."
+expect = "answer"
+answer_kind = "set"
+item_type = "game_id"
+truth_sql = '''
+WITH counts AS (
+  SELECT game_id, COUNT(*) AS n FROM touchdowns
+  WHERE season = 2019 AND week = 8
+  GROUP BY game_id
+)
+SELECT game_id FROM counts WHERE n = (SELECT MAX(n) FROM counts)
+'''
+expected_tools = [["list_games"]]
+max_calls = 3
+reference_calls = [{ tool = "list_games", args = { season = 2019, week = 8 } }]
+notes = "The highest-scoring game of a week by touchdowns, where two of the fifteen games are tied on 8 and the next has 7. Naming only one of them is wrong. No reference_path: the answer comes from comparing the touchdown counts of all the games listed. Truth re-derived 2026-11-16 by counting touchdown rows per game id: 2019-08-CAR-SF and 2019-08-NYG-DET."
+
+[[case]]
+id = "game-lists-04"
+category = "game_lists"
+split = "heldout"
+question = "How many games were played in week 10 of the 2019 regular season?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = "SELECT COUNT(*) FROM games WHERE season = 2019 AND week = 10"
+expected_tools = [["list_games"]]
+max_calls = 3
+reference_calls = [{ tool = "list_games", args = { season = 2019, week = 10 } }]
+reference_path = "total_matches"
+notes = "Counting the games of one week. Six teams were idle that week, so the answer is not the usual 16. Truth re-derived 2026-11-16 (13 game ids starting 2019-10-, with 26 different teams): 13."

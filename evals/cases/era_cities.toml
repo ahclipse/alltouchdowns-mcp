@@ -1,0 +1,143 @@
+# Teams whose city changed between the two fixture seasons. In 2007 the franchises now in Los
+# Angeles played in San Diego and St. Louis; Oakland was still Oakland in 2019 and moved after.
+# The server finds a franchise by any city or abbreviation it has used, and labels each
+# touchdown with the abbreviation of its own season (SD in 2007, LAC in 2019).
+#
+# Cases 05 to 07 name a team by NICKNAME on purpose. They are the only cases in the suite that
+# do. The server rejects nicknames (unknown_team, with the list of valid abbreviations), so
+# the agent has to turn the nickname into a city or abbreviation itself.
+
+[[case]]
+id = "era-cities-01"
+category = "era_cities"
+split = "dev"
+question = "How many touchdowns did San Diego score in the 2007 season, regular season and playoffs combined?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = '''
+SELECT COUNT(*) FROM touchdowns
+WHERE season = 2007 AND team_abbr = 'SD'
+'''
+expected_tools = [["search_touchdowns", "get_leaderboard"]]
+max_calls = 3
+reference_calls = [{ tool = "search_touchdowns", args = { team = "San Diego", season = 2007 } }]
+reference_path = "matched.total"
+notes = "A city that no longer has a team, in a season when it did. Truth re-derived 2026-11-16: 55, which is 49 in the regular season plus 6 in three playoff games (2 against Tennessee, 4 at Indianapolis, 0 at New England). Leaving the season out adds the franchise's 37 Los Angeles touchdowns of 2019 and gives 92."
+
+[[case]]
+id = "era-cities-02"
+category = "era_cities"
+split = "dev"
+question = "Which players caught a touchdown pass in the 2019 regular season for the Los Angeles team that used to play in San Diego?"
+expect = "answer"
+answer_kind = "set"
+item_type = "player_slug"
+truth_sql = '''
+SELECT DISTINCT player_slug FROM touchdowns
+WHERE season = 2019 AND postseason = 0 AND team_abbr = 'LAC' AND td_type = 'receiving'
+  AND player_slug IS NOT NULL
+'''
+expected_tools = [["get_leaderboard", "search_touchdowns"]]
+max_calls = 3
+reference_calls = [{ tool = "get_leaderboard", args = { season = 2019, team = "LAC", td_type = "receiving", limit = 50 } }]
+reference_path = "rows[*].player.slug"
+notes = "The franchise is described by its history instead of an abbreviation; 'Los Angeles' alone is ambiguous, 'LAC' or 'San Diego' both work. Truth re-derived 2026-11-16: 7 players (austin-ekeler 8, keenan-allen 6, hunter-henry 5, mike-williams-6 2, melvin-gordon 1, troymaine-pope 1, virgil-green 1; 24 touchdowns). The other Los Angeles team would give 7 different names."
+
+[[case]]
+id = "era-cities-03"
+category = "era_cities"
+split = "dev"
+question = "Who were the five leading touchdown scorers for St. Louis in the 2007 regular season? List them from most touchdowns to fewest."
+expect = "answer"
+answer_kind = "ordered_list"
+item_type = "player_slug"
+truth_sql = '''
+WITH counts AS (
+  SELECT player_slug, COUNT(*) AS n FROM touchdowns
+  WHERE season = 2007 AND postseason = 0 AND team_abbr = 'STL' AND player_slug IS NOT NULL
+  GROUP BY player_slug
+)
+SELECT player_slug, n FROM counts
+WHERE n >= (SELECT n FROM counts ORDER BY n DESC LIMIT 1 OFFSET 4)
+ORDER BY n DESC, player_slug
+'''
+expected_tools = [["get_leaderboard", "search_touchdowns"]]
+max_calls = 3
+reference_calls = [{ tool = "get_leaderboard", args = { season = 2007, team = "St. Louis", limit = 5 } }]
+reference_path = "rows[*].player.slug"
+notes = "A team leaderboard asked by a city the franchise has since left. Truth re-derived 2026-11-16: torry-holt 7, steven-jackson 6, isaac-bruce 4, then drew-bennett and randy-mcmichael tied on 3 (either order is right). Sixth place has 1, so the top five is exactly five players."
+
+[[case]]
+id = "era-cities-04"
+category = "era_cities"
+split = "heldout"
+question = "Which teams did Shaun McDonald score touchdowns against in the 2007 regular season?"
+expect = "answer"
+answer_kind = "set"
+item_type = "team_abbr"
+truth_sql = '''
+SELECT DISTINCT CASE WHEN t.team_abbr = g.home_abbr THEN g.away_abbr ELSE g.home_abbr END
+FROM touchdowns t JOIN games g ON g.game_id = t.game_id
+WHERE t.player_slug = 'shaun-mcdonald' AND t.season = 2007 AND t.postseason = 0
+'''
+expected_tools = [["find_players"], ["search_touchdowns"]]
+max_calls = 4
+reference_calls = [
+  { tool = "find_players", args = { query = "Shaun McDonald" } },
+  { tool = "search_touchdowns", args = { player = "shaun-mcdonald", season = 2007, season_type = "regular" } },
+]
+reference_path = "touchdowns[*].opponent.abbr"
+notes = "Era abbreviations read from the opponent field: two of the six opponents (SD, OAK) have moved since, and the grader accepts LAC and LV for them. Truth re-derived 2026-11-16: OAK, PHI, CHI, DEN, SD, GB, one touchdown against each, by reading his six rows."
+
+[[case]]
+id = "era-cities-05"
+category = "era_cities"
+split = "dev"
+question = "How many touchdowns did the Panthers score in the 2007 regular season?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = '''
+SELECT COUNT(*) FROM touchdowns
+WHERE season = 2007 AND postseason = 0 AND team_abbr = 'CAR'
+'''
+expected_tools = [["search_touchdowns", "get_leaderboard"]]
+max_calls = 3
+reference_calls = [{ tool = "search_touchdowns", args = { team = "Carolina", season = 2007, season_type = "regular" } }]
+reference_path = "matched.regular_season"
+notes = "NICKNAME case, a team that has not moved: the agent must turn the nickname into 'Carolina' or 'CAR' (the team is named for a region, so its home city does not work either). Truth re-derived 2026-11-16: 28 (19 receiving, 7 rushing, 1 interception return, 1 fumble return), and again by adding up its 14 games with a touchdown."
+
+[[case]]
+id = "era-cities-06"
+category = "era_cities"
+split = "dev"
+question = "Which Raiders players scored a rushing touchdown in the 2019 regular season?"
+expect = "answer"
+answer_kind = "set"
+item_type = "player_slug"
+truth_sql = '''
+SELECT DISTINCT player_slug FROM touchdowns
+WHERE season = 2019 AND postseason = 0 AND team_abbr = 'OAK' AND td_type = 'rushing'
+  AND player_slug IS NOT NULL
+'''
+expected_tools = [["get_leaderboard", "search_touchdowns"]]
+max_calls = 3
+reference_calls = [{ tool = "get_leaderboard", args = { season = 2019, team = "Oakland", td_type = "rushing", limit = 50 } }]
+reference_path = "rows[*].player.slug"
+notes = "NICKNAME case, a relocated team in its old city's season: in 2019 this team was still in Oakland ('Oakland', 'OAK', 'Las Vegas' and 'LV' all find it). Truth re-derived 2026-11-16: josh-jacobs 7, deandre-washington 3, derek-carr 2, trevor-davis 1 (13 touchdowns, counted game by game)."
+
+[[case]]
+id = "era-cities-07"
+category = "era_cities"
+split = "heldout"
+question = "How many rushing touchdowns did the Rams score in the 2019 regular season?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = '''
+SELECT COUNT(*) FROM touchdowns
+WHERE season = 2019 AND postseason = 0 AND team_abbr = 'LA' AND td_type = 'rushing'
+'''
+expected_tools = [["search_touchdowns", "get_leaderboard"]]
+max_calls = 3
+reference_calls = [{ tool = "search_touchdowns", args = { team = "LA", season = 2019, td_type = "rushing", season_type = "regular" } }]
+reference_path = "matched.regular_season"
+notes = "NICKNAME case where the season decides the city: St. Louis in 2007, Los Angeles in 2019, and 'Los Angeles' alone is refused as ambiguous, so the agent must pick LA and not LAC. Truth re-derived 2026-11-16: 20 (todd-gurley 12, malcolm-brown 5, jared-goff 2, robert-woods 1). The other Los Angeles team had 12."

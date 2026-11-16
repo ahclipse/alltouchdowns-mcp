@@ -1,0 +1,99 @@
+# Players who scored in both fixture seasons, 2007 and 2019. The two seasons together stand in
+# for a career total, which a two-season database cannot test. Each question names both
+# seasons, so its truth SQL is right against any database.
+#
+# Only twelve players scored in both seasons, and most of them are stars whose season totals
+# are well known. The subjects here are three tight ends and a receiver, and cases 01 and 04
+# ask for something no stat line holds: the opponents he scored against, and the games
+# themselves.
+#
+# Case 03 is marked requires = "fixture" for one reason only: its reference_path reads an
+# all-seasons count, which equals the two-season sum only while 2007 and 2019 are the only
+# seasons loaded. Against the full dataset the same question is answered with one search per
+# season, which is what the reference solutions of cases 01 and 04 do.
+
+[[case]]
+id = "two-season-totals-01"
+category = "two_season_totals"
+split = "dev"
+question = "Against which teams did Greg Olsen score a touchdown in the 2007 and 2019 regular seasons combined?"
+expect = "answer"
+answer_kind = "set"
+item_type = "team_abbr"
+truth_sql = '''
+SELECT DISTINCT CASE WHEN t.team_abbr = g.home_abbr THEN g.away_abbr ELSE g.home_abbr END
+FROM touchdowns t JOIN games g ON g.game_id = t.game_id
+WHERE t.player_slug = 'greg-olsen' AND t.season IN (2007, 2019) AND t.postseason = 0
+'''
+expected_tools = [["find_players"], ["search_touchdowns"]]
+max_calls = 5
+reference_calls = [
+  { tool = "find_players", args = { query = "Greg Olsen" } },
+  { tool = "search_touchdowns", args = { player = "greg-olsen", season = 2007, season_type = "regular" } },
+  { tool = "search_touchdowns", args = { player = "greg-olsen", season = 2019, season_type = "regular" } },
+]
+notes = "The opponents across both seasons, for a tight end who played them for two different teams twelve years apart: his totals (2 and 2) are on any stat line, the teams he scored against are not, and they have to be read from the rows of two searches. Both of his 2019 touchdowns came in one game, so the answer has three teams, not four. No reference_path: the answer is spread over one search per season, so pre-flight only checks that all three teams appear in the results; that also makes the reference hold against any database, and max_calls is 5 for that reason. Truth re-derived 2026-11-16 from his four rows: GB (2007-05-CHI-GB) and DET (2007-08-DET-CHI) while with Chicago, ARI (2019-03-CAR-ARI, twice) while with Carolina."
+
+[[case]]
+id = "two-season-totals-02"
+category = "two_season_totals"
+split = "dev"
+question = "Did Delanie Walker score more touchdowns in the 2019 regular season than in the 2007 regular season?"
+expect = "answer"
+answer_kind = "boolean"
+truth_sql = '''
+SELECT (SELECT COUNT(*) FROM touchdowns
+        WHERE player_slug = 'delanie-walker' AND season = 2019 AND postseason = 0)
+     > (SELECT COUNT(*) FROM touchdowns
+        WHERE player_slug = 'delanie-walker' AND season = 2007 AND postseason = 0)
+'''
+expected_tools = [["find_players"], ["get_player", "search_touchdowns"]]
+max_calls = 4
+reference_calls = [
+  { tool = "find_players", args = { query = "Delanie Walker" } },
+  { tool = "get_player", args = { slug = "delanie-walker" } },
+]
+notes = "Which of the two seasons was higher. The answer comes from comparing two by_season rows, so no single field holds it. It runs against the usual guess that a player scores less late in his career. Truth re-derived 2026-11-16: true (2 in 2019, both in week 1 for TEN; 1 in 2007, for SF)."
+
+[[case]]
+id = "two-season-totals-03"
+category = "two_season_totals"
+split = "heldout"
+requires = "fixture"
+question = "How many receiving touchdowns did Ted Ginn Jr. score in the 2007 and 2019 regular seasons combined?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = '''
+SELECT COUNT(*) FROM touchdowns
+WHERE player_slug = 'ted-ginn' AND season IN (2007, 2019) AND postseason = 0
+  AND td_type = 'receiving'
+'''
+expected_tools = [["find_players"], ["get_player", "search_touchdowns"]]
+max_calls = 4
+reference_calls = [
+  { tool = "find_players", args = { query = "Ted Ginn Jr." } },
+  { tool = "search_touchdowns", args = { player = "ted-ginn", td_type = "receiving" } },
+]
+reference_path = "matched.regular_season"
+notes = "A two-season total restricted to one type: his 2007 punt-return touchdown must be left out, so his overall total (5) is wrong. The name carries a suffix that the stored name does not. Truth re-derived 2026-11-16: 4 (2 for MIA in 2007, 2 for NO in 2019)."
+
+[[case]]
+id = "two-season-totals-04"
+category = "two_season_totals"
+split = "dev"
+question = "List every game in which Marcedes Lewis scored a touchdown in the 2007 and 2019 regular seasons."
+expect = "answer"
+answer_kind = "set"
+item_type = "game_id"
+truth_sql = '''
+SELECT DISTINCT game_id FROM touchdowns
+WHERE player_slug = 'marcedes-lewis' AND season IN (2007, 2019) AND postseason = 0
+'''
+expected_tools = [["find_players"], ["search_touchdowns"]]
+max_calls = 5
+reference_calls = [
+  { tool = "find_players", args = { query = "Marcedes Lewis" } },
+  { tool = "search_touchdowns", args = { player = "marcedes-lewis", season = 2007, season_type = "regular" } },
+  { tool = "search_touchdowns", args = { player = "marcedes-lewis", season = 2019, season_type = "regular" } },
+]
+notes = "The games of both seasons, not the count, for a long-serving tight end with two different teams twelve years apart: his totals (2 and 1) could be recalled, the three game ids cannot. Both of his teams reached the playoffs in these seasons and he did not score in them. No reference_path: the answer is spread over one search per season, which makes the reference hold against any database, and max_calls is 5 for that reason. Truth re-derived 2026-11-16: 2007-11-SD-JAX and 2007-13-JAX-IND (for JAX), 2019-13-GB-NYG (for GB), one reception in each."

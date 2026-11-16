@@ -1,0 +1,97 @@
+# Runs the MCP server and its daily export job on a host shared with other services.
+#
+# Nothing here names another service's volumes, networks or paths: those come from a .env
+# file that exists only on the server (see .env.example).
+#
+# The guiding rule is that this project must never be able to slow its neighbours down:
+#   - the lowest CPU priority (cpu_shares: 2), so under load everything else wins
+#   - hard ceilings on CPU, memory and process count
+#   - a read-only filesystem and no Linux capabilities
+#   - the source data is mounted read-only, and only into the export job
+
+name: alltouchdowns-mcp
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" }
+
+x-hardened: &hardened
+  image: ${MCP_IMAGE:?}:${MCP_IMAGE_TAG:?}
+  user: "10001:10001"
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  pids_limit: 128
+  cpus: 0.5
+  cpu_shares: 2
+  mem_limit: 256m
+  memswap_limit: 256m
+  logging: *logging
+
+services:
+  mcp-server:
+    <<: *hardened
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      ATD_DB_PATH: /data/mcp.db
+      ATD_HOST: 0.0.0.0
+    expose: ["8000"]
+    tmpfs: ["/tmp:size=16m"]
+    volumes:
+      - { type: volume, source: mcp-data, target: /data, read_only: true }
+    networks:
+      # A name no other container on that network uses, so the proxy cannot confuse them.
+      proxy: { aliases: [alltouchdowns-mcp] }
+    stop_grace_period: 10s
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  # One-shot: `docker compose run --rm export`. Builds a new /data/mcp.db from the website's
+  # current snapshot. It has no network at all.
+  export:
+    <<: *hardened
+    profiles: [job]
+    network_mode: none
+    command:
+      - python
+      - -m
+      - alltouchdowns_mcp.export
+      - --pointer-file=${SITE_POINTER_FILE:?}
+      - --source-template=${SITE_SNAPSHOT_TEMPLATE:?}
+      - --site-patterns=/site-patterns/patterns.ts
+      - --scratch=/scratch
+      - --out=/data/mcp.db
+    environment:
+      TZ: America/New_York
+    tmpfs:
+      # The full copy of the website's database lives here, in memory, for a few seconds.
+      # It never touches a disk and is gone when the container exits.
+      - /scratch:size=96m,uid=10001,gid=10001
+      - /tmp:size=16m
+    volumes:
+      - type: volume
+        source: site-data
+        target: /site-data
+        read_only: true
+        volume: { nocopy: true }
+      - { type: volume, source: mcp-data, target: /data }
+      - type: bind
+        source: ${SITE_PATTERNS_FILE:?}
+        target: /site-patterns/patterns.ts
+        read_only: true
+
+volumes:
+  mcp-data:
+  site-data: { external: true, name: "${SITE_DATA_VOLUME:?}" }
+
+networks:
+  proxy: { external: true, name: "${PROXY_NETWORK:?}" }

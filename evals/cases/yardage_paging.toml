@@ -1,0 +1,127 @@
+# Yardage filters, ordering by length, and the matched count. A search returns one page of
+# rows but `matched` counts every row that fits, so "how many" never needs paging. Return
+# touchdowns have a length too, and the longest touchdowns of a season are usually returns.
+
+[[case]]
+id = "yardage-paging-01"
+category = "yardage_paging"
+split = "dev"
+question = "How many touchdowns of 80 yards or more were scored in the 2007 season, regular season and playoffs combined? Count every kind of touchdown, returns included."
+expect = "answer"
+answer_kind = "number"
+truth_sql = "SELECT COUNT(*) FROM touchdowns WHERE season = 2007 AND yards >= 80"
+expected_tools = [["search_touchdowns"]]
+max_calls = 3
+reference_calls = [{ tool = "search_touchdowns", args = { season = 2007, min_yards = 80 } }]
+reference_path = "matched.total"
+notes = "A minimum-yards count over a whole season: 45 match but the default page holds 25 rows, and one of the 45 is a playoff touchdown. Truth re-derived 2026-11-16 by counting yards above 79 per type: kickoff_return 22, punt_return 7, receiving 7, int_return 5, rushing 3, other 1 = 45 (44 regular season, 1 playoffs)."
+
+[[case]]
+id = "yardage-paging-02"
+category = "yardage_paging"
+split = "dev"
+question = "Who scored the longest touchdown of the 2019 season, counting every kind of touchdown in the regular season and the playoffs?"
+expect = "answer"
+answer_kind = "set"
+item_type = "player_slug"
+truth_sql = '''
+SELECT player_slug FROM touchdowns
+WHERE season = 2019 AND yards = (SELECT MAX(yards) FROM touchdowns WHERE season = 2019)
+'''
+expected_tools = [["search_touchdowns"]]
+max_calls = 3
+reference_calls = [{ tool = "search_touchdowns", args = { season = 2019, order = "longest", limit = 1 } }]
+reference_path = "touchdowns[*].scorer.slug"
+notes = "Ordering by length: the answer is one player, and the longest touchdown is unique (a 104-yard kickoff return; the next are 102, 101 and 100). Truth re-derived 2026-11-16 by listing the four longest touchdowns of 2019: mecole-hardman."
+
+[[case]]
+id = "yardage-paging-03"
+category = "yardage_paging"
+split = "heldout"
+question = "Which players scored Detroit's three longest touchdowns of the 2007 regular season, counting every kind of touchdown including defensive and return scores? List them from the longest touchdown to the shortest."
+expect = "answer"
+answer_kind = "ordered_list"
+item_type = "player_slug"
+truth_sql = '''
+WITH detroit AS (
+  SELECT player_slug, yards FROM touchdowns
+  WHERE season = 2007 AND postseason = 0 AND team_abbr = 'DET' AND player_slug IS NOT NULL
+)
+SELECT player_slug, yards FROM detroit
+WHERE yards >= (SELECT yards FROM detroit ORDER BY yards DESC LIMIT 1 OFFSET 2)
+ORDER BY yards DESC, player_slug
+'''
+expected_tools = [["search_touchdowns"]]
+max_calls = 3
+reference_calls = [{ tool = "search_touchdowns", args = { team = "Detroit", season = 2007, season_type = "regular", order = "longest", limit = 3 } }]
+reference_path = "touchdowns[*].scorer.slug"
+notes = "A team's longest touchdowns in order: three different players with no tie at the cut (91, 66 and 64 yards, then 61), two of them defenders, and the first with a suffixed slug. Truth re-derived 2026-11-16 by listing the franchise's five longest of 2007: roy-williams-2, shaun-rogers, keith-smith."
+
+[[case]]
+id = "yardage-paging-04"
+category = "yardage_paging"
+split = "dev"
+question = "How many receiving touchdowns of 30 yards or more were scored in the 2019 regular season?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = '''
+SELECT COUNT(*) FROM touchdowns
+WHERE season = 2019 AND postseason = 0 AND td_type = 'receiving' AND yards >= 30
+'''
+expected_tools = [["search_touchdowns"]]
+max_calls = 3
+reference_calls = [{ tool = "search_touchdowns", args = { season = 2019, td_type = "receiving", min_yards = 30, season_type = "regular" } }]
+reference_path = "matched.regular_season"
+notes = "A count far larger than a page (50 rows at most), so the agent must read the matched count instead of counting or paging through rows. Truth re-derived 2026-11-16 as all regular-season receiving touchdowns minus those under 30 yards: 797 - 629 = 168 (six more in the playoffs do not count)."
+
+# The two cases below are the ones that cannot be answered from a first page. Their answers
+# are spread over more rows than one call can return (50 at most), and the total count says
+# nothing about them, so next_cursor has to be followed to the end. A cursor is only valid for
+# one export of the data, so the reference calls do not spell one out: "$next_cursor" stands
+# for the cursor the call before returned.
+
+[[case]]
+id = "yardage-paging-05"
+category = "yardage_paging"
+split = "dev"
+question = "Which players scored two or more touchdowns in week 2 of the 2019 regular season?"
+expect = "answer"
+answer_kind = "set"
+item_type = "player_slug"
+truth_sql = '''
+SELECT player_slug FROM touchdowns
+WHERE season = 2019 AND week = 2 AND postseason = 0 AND player_slug IS NOT NULL
+GROUP BY player_slug HAVING COUNT(*) >= 2
+'''
+expected_tools = [["search_touchdowns"]]
+max_calls = 6
+reference_calls = [
+  { tool = "search_touchdowns", args = { season = 2019, week = 2, limit = 50 } },
+  { tool = "search_touchdowns", args = { season = 2019, week = 2, limit = 50, cursor = "$next_cursor" } },
+]
+notes = "Paging a search: the week has 70 touchdowns by 65 players and a page holds 50 at most, so the second page must be fetched and the rows of both tallied by scorer. The leaderboard has no week filter, and reading the week's 16 games one by one costs 17 calls. (Two pages of 50 in opposite orders, oldest and newest first, would also cover 70 rows without a cursor; one call never does.) Only two of the five players are complete on the first page; jeff-wilson's two touchdowns are rows 50 and 52, one on each side of the page break, and the last two players are wholly on the second page. No reference_path: the answer is a tally across both pages, so pre-flight only checks that all five slugs are returned. max_calls is 6: at the default page size of 25 the week is three pages, plus 3. The cursor is the next_cursor of the first call. Truth re-derived 2026-11-16 by reading all 70 rows the two calls return: will-dissly and vance-mcdonald (Seattle at Pittsburgh), jeff-wilson (San Francisco at Cincinnati), demarcus-robinson (Kansas City at Oakland) and julio-jones (Philadelphia at Atlanta), 2 each; nobody has 3."
+
+[[case]]
+id = "yardage-paging-06"
+category = "yardage_paging"
+split = "heldout"
+question = "Which games of the 2019 regular season had exactly one touchdown, counting both teams together?"
+expect = "answer"
+answer_kind = "set"
+item_type = "game_id"
+truth_sql = '''
+SELECT game_id FROM touchdowns
+WHERE season = 2019 AND postseason = 0
+GROUP BY game_id HAVING COUNT(*) = 1
+'''
+expected_tools = [["list_games"]]
+max_calls = 9
+reference_calls = [
+  { tool = "list_games", args = { season = 2019, season_type = "regular" } },
+  { tool = "list_games", args = { season = 2019, season_type = "regular", cursor = "$next_cursor" } },
+  { tool = "list_games", args = { season = 2019, season_type = "regular", cursor = "$next_cursor" } },
+  { tool = "list_games", args = { season = 2019, season_type = "regular", cursor = "$next_cursor" } },
+  { tool = "list_games", args = { season = 2019, season_type = "regular", cursor = "$next_cursor" } },
+  { tool = "list_games", args = { season = 2019, season_type = "regular", cursor = "$next_cursor" } },
+]
+notes = "Paging a game list: the regular season is 256 games, six pages of 50, and the touchdown count of a game cannot be filtered on, so every page has to be read. The seven games are spread over the first five pages (1, 3, 1, 1 and 1 of them) and the sixth has none, which the agent cannot know without fetching it. Going week by week instead takes 17 calls. The one game with no touchdown at all, 2019-07-SF-WAS, is not an answer. No reference_path: the answer is picked out of six pages, so pre-flight only checks that all seven ids are returned. max_calls is 9: six pages plus 3. Each cursor is the next_cursor of the call before it. Truth re-derived 2026-11-16 by joining games to their touchdown rows and checking each final score allows only one touchdown: 2019-01-GB-CHI (10-3), 2019-04-DAL-NO (10-12), 2019-06-NO-JAX (13-6), 2019-06-TEN-DEN (0-16), 2019-08-WAS-MIN (9-19), 2019-12-DAL-NE (9-13), 2019-17-NYJ-BUF (13-6)."

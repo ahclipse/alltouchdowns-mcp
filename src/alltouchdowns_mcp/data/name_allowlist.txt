@@ -1,0 +1,6 @@
+# Real players whose names contain a banned word.
+# One exact display name per line. The export fails on any player name that hits a banned
+# pattern and is not listed here, so adding a line is a deliberate, reviewed act:
+# confirm the name is a person in the source data before adding it.
+Bear Pascoe
+Colt McCoy

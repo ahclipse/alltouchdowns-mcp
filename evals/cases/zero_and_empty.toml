@@ -1,0 +1,123 @@
+# Questions whose correct answer is 0 or "no". The data covers them: an empty result is the
+# answer, not a gap. The right behaviour is to answer 0 or false, never to decline and never
+# to fill the gap with a remembered or assumed number.
+#
+# Two of the yes/no cases (05 and 06) are true on purpose. They are worded like the false
+# ones, so answering "no" to every yes/no question here gets only half of them right.
+
+[[case]]
+id = "zero-and-empty-01"
+category = "zero_and_empty"
+split = "dev"
+question = "Did Kansas City score a touchdown in its week 10 game against Denver in the 2007 regular season?"
+expect = "answer"
+answer_kind = "boolean"
+truth_sql = '''
+SELECT COUNT(*) FROM touchdowns t JOIN games g ON g.game_id = t.game_id
+WHERE g.season = 2007 AND g.week = 10 AND t.team_abbr = 'KC'
+  AND 'DEN' IN (g.away_abbr, g.home_abbr)
+'''
+expected_tools = [["get_game", "search_touchdowns"]]
+max_calls = 3
+reference_calls = [{ tool = "search_touchdowns", args = { team = "Kansas City", season = 2007, week = 10 } }]
+reference_path = "matched.total"
+notes = "A team held without a touchdown in a mid-season game nobody remembers. Kansas City lost 27-11 at home, and 11 points do not say whether one of the scores was a touchdown, so the answer cannot be read off the final score. The game was played and its touchdown list is complete (three touchdowns, all Denver's), so the empty search is the answer: no, not a decline. The two teams met again in week 14 in Denver, where Kansas City did score one. An agent can just as well call get_game and see that no row is Kansas City's. Truth re-derived 2026-11-16 by reading the rows of 2007-10-DEN-KC (selvin-young, nate-webster, daniel-graham, all for DEN): false."
+
+[[case]]
+id = "zero-and-empty-02"
+category = "zero_and_empty"
+split = "dev"
+question = "Was any touchdown scored in overtime in the playoffs of the 2007 season?"
+expect = "answer"
+answer_kind = "boolean"
+truth_sql = '''
+SELECT COUNT(*) FROM touchdowns
+WHERE season = 2007 AND postseason = 1 AND quarter >= 5
+'''
+expected_tools = [["search_touchdowns", "get_game", "list_games"]]
+max_calls = 3
+reference_calls = [{ tool = "search_touchdowns", args = { season = 2007, quarter = 5, season_type = "postseason" } }]
+reference_path = "matched.postseason"
+notes = "An empty search is the answer. Truth re-derived 2026-11-16: false. All 58 touchdowns of the 2007 playoffs came in quarters 1 to 4; the four overtime touchdowns of that season were in regular-season weeks 8, 12, 14 and 15. (The same question about 2019 is true.)"
+
+[[case]]
+id = "zero-and-empty-03"
+category = "zero_and_empty"
+split = "dev"
+question = "How many punt-return touchdowns did New Orleans running back Reggie Bush score in the 2007 regular season?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = '''
+SELECT COUNT(*) FROM touchdowns t JOIN players p ON p.slug = t.player_slug
+WHERE p.display_name = 'Reggie Bush' AND t.td_type = 'punt_return'
+  AND t.season = 2007 AND t.postseason = 0
+'''
+expected_tools = [["find_players"], ["search_touchdowns", "get_player"]]
+max_calls = 4
+reference_calls = [
+  { tool = "find_players", args = { query = "Reggie Bush" } },
+  { tool = "search_touchdowns", args = { player = "reggie-bush", season = 2007, td_type = "punt_return", season_type = "regular" } },
+]
+reference_path = "matched.regular_season"
+notes = "A real scorer and a type he is known for but did not score that year, so memory suggests a number above zero. Truth re-derived 2026-11-16: 0. His six 2007 touchdowns are 4 rushing and 2 receiving, and New Orleans has no punt-return or kickoff-return touchdown by anyone in 2007."
+
+[[case]]
+id = "zero-and-empty-04"
+category = "zero_and_empty"
+split = "heldout"
+question = "How many receiving touchdowns did Denver score in the third quarter of its games in the 2019 regular season?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = '''
+SELECT COUNT(*) FROM touchdowns
+WHERE season = 2019 AND postseason = 0 AND team_abbr = 'DEN'
+  AND td_type = 'receiving' AND quarter = 3
+'''
+expected_tools = [["search_touchdowns"]]
+max_calls = 3
+reference_calls = [{ tool = "search_touchdowns", args = { team = "Denver", season = 2019, td_type = "receiving", quarter = 3, season_type = "regular" } }]
+reference_path = "matched.regular_season"
+notes = "A team, a type and a quarter that together match nothing, for a team with plenty of touchdowns of that type, so zero is neither a guess anyone would make nor something a final score gives away. Denver caught 16 touchdown passes in the 2019 regular season and none of them came in a third quarter. The empty search is the answer: 0, not a decline. Truth re-derived 2026-11-16 by listing Denver's 16 receiving touchdowns with their quarters (7 in the first, 5 in the second, 4 in the fourth) and its 5 third-quarter touchdowns (all rushing): 0."
+
+[[case]]
+id = "zero-and-empty-05"
+category = "zero_and_empty"
+split = "dev"
+question = "Did Indianapolis score a touchdown in its week 10 game against Miami in the 2019 regular season?"
+expect = "answer"
+answer_kind = "boolean"
+truth_sql = '''
+SELECT COUNT(*) FROM touchdowns t JOIN games g ON g.game_id = t.game_id
+WHERE g.season = 2019 AND g.week = 10 AND t.team_abbr = 'IND'
+  AND 'MIA' IN (g.away_abbr, g.home_abbr)
+'''
+expected_tools = [["get_game", "search_touchdowns"]]
+max_calls = 3
+reference_calls = [{ tool = "search_touchdowns", args = { team = "Indianapolis", season = 2019, week = 10 } }]
+reference_path = "matched.total"
+notes = "The true twin of zero-and-empty-01, worded the same way, so that answering no to every such question does not score. Indianapolis lost 16-12 at home in a game nobody remembers; 12 points look like four field goals, but one of the scores was a touchdown, a 1-yard catch in the fourth quarter. Truth re-derived 2026-11-16 by reading the rows of 2019-10-MIA-IND (two touchdowns: ryan-fitzpatrick for MIA, jack-doyle for IND): true."
+
+[[case]]
+id = "zero-and-empty-06"
+category = "zero_and_empty"
+split = "heldout"
+question = "Did any player score both a rushing touchdown and a receiving touchdown in the week 5 game between Detroit and Washington in the 2007 regular season?"
+expect = "answer"
+answer_kind = "boolean"
+truth_sql = '''
+SELECT COUNT(*) FROM (
+  SELECT player_slug FROM touchdowns
+  WHERE season = 2007 AND week = 5 AND td_type IN ('rushing', 'receiving')
+    AND player_slug IS NOT NULL
+    AND game_id IN (
+      SELECT game_id FROM games
+      WHERE 'DET' IN (away_abbr, home_abbr) AND 'WAS' IN (away_abbr, home_abbr)
+    )
+  GROUP BY player_slug
+  HAVING COUNT(DISTINCT td_type) = 2
+)
+'''
+expected_tools = [["get_game", "search_touchdowns"]]
+max_calls = 3
+reference_calls = [{ tool = "get_game", args = { season = 2007, week = 5, team = "Washington" } }]
+notes = "A true answer to a question that sounds as if it should be no: it is rare for one player to do both in a game, and here a little-known player did, in a 34-3 game nobody remembers. It keeps an agent that answers no to every yes/no question from scoring. No reference_path: the answer comes from comparing the scorer and type of the game's four rows. Truth re-derived 2026-11-16 by reading the rows of 2007-05-DET-WAS (chris-cooley receiving, mike-sellers rushing in the second quarter, mike-sellers receiving in the fourth, carlos-rogers int_return; all for WAS): true."

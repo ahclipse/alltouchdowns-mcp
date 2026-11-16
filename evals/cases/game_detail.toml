@@ -1,0 +1,153 @@
+# Questions about one game, described the way a fan would: season, week and cities, never a
+# game id. The agent has to find the game and then read its touchdown rows correctly: their
+# order, which team scored, the quarter, the type and who scored more than once.
+
+[[case]]
+id = "game-detail-01"
+category = "game_detail"
+split = "dev"
+question = "List the players who scored touchdowns in the week 10 game between Los Angeles and Oakland in the 2019 regular season, in the order the touchdowns were scored."
+expect = "answer"
+answer_kind = "ordered_list"
+item_type = "player_slug"
+truth_sql = '''
+SELECT player_slug, game_seq FROM touchdowns
+WHERE season = 2019 AND week = 10 AND player_slug IS NOT NULL
+  AND game_id IN (
+    SELECT game_id FROM games
+    WHERE 'LAC' IN (away_abbr, home_abbr) AND 'OAK' IN (away_abbr, home_abbr)
+  )
+ORDER BY game_seq
+'''
+expected_tools = [["get_game"]]
+max_calls = 3
+reference_calls = [{ tool = "get_game", args = { season = 2019, week = 10, team = "Oakland" } }]
+reference_path = "touchdowns[*].scorer.slug"
+notes = "Scorers in order, six touchdowns by six different players. 'Los Angeles' alone is refused as ambiguous, and the other Los Angeles team also played that week (at Pittsburgh), so the game has to be found through Oakland or the right abbreviation. Truth re-derived 2026-11-16 (ordering by running score and by quarter and time left agree with game_seq): erik-harris, hunter-henry, melvin-gordon, alec-ingold, austin-ekeler, josh-jacobs."
+
+[[case]]
+id = "game-detail-02"
+category = "game_detail"
+split = "dev"
+question = "How many touchdowns did St. Louis score in its week 5 game of the 2007 regular season?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = "SELECT COUNT(*) FROM touchdowns WHERE season = 2007 AND week = 5 AND team_abbr = 'STL'"
+expected_tools = [["get_game", "search_touchdowns"]]
+max_calls = 3
+reference_calls = [{ tool = "search_touchdowns", args = { team = "St. Louis", season = 2007, week = 5 } }]
+reference_path = "matched.total"
+notes = "One team's touchdowns in a game described by one city, for a team that has since moved (St. Louis in 2007, Los Angeles today). The game had 7 touchdowns, 4 of them Arizona's, so the game total and the opponent's count are both wrong answers. Truth re-derived 2026-11-16 by reading the rows of 2007-05-ARI-STL (drew-bennett, torry-holt, randy-mcmichael): 3."
+
+[[case]]
+id = "game-detail-03"
+category = "game_detail"
+split = "dev"
+question = "Who scored the last touchdown of the week 7 game between Miami and Buffalo in the 2019 regular season?"
+expect = "answer"
+answer_kind = "set"
+item_type = "player_slug"
+truth_sql = '''
+SELECT player_slug FROM touchdowns
+WHERE season = 2019 AND week = 7
+  AND game_id IN (
+    SELECT game_id FROM games
+    WHERE 'MIA' IN (away_abbr, home_abbr) AND 'BUF' IN (away_abbr, home_abbr)
+  )
+ORDER BY game_seq DESC LIMIT 1
+'''
+expected_tools = [["get_game", "search_touchdowns"]]
+max_calls = 3
+reference_calls = [{ tool = "search_touchdowns", args = { season = 2019, week = 7, team = "Buffalo", order = "newest", limit = 1 } }]
+reference_path = "touchdowns[*].scorer.slug"
+notes = "The last touchdown of a game: a defensive back's kickoff return, nine seconds of game time after the previous score. An agent would call get_game and read the last row; the reference instead asks for Buffalo's newest touchdown that week, because a reference_path cannot pick one row out of a game. Truth re-derived 2026-11-16 (latest by quarter and time left, 4th quarter 01:45): micah-hyde."
+
+[[case]]
+id = "game-detail-04"
+category = "game_detail"
+split = "dev"
+question = "How many touchdowns were scored in the second quarter of the week 11 game between Dallas and Detroit in the 2019 regular season, counting both teams?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = '''
+SELECT COUNT(*) FROM touchdowns
+WHERE season = 2019 AND week = 11 AND quarter = 2
+  AND game_id IN (
+    SELECT game_id FROM games
+    WHERE 'DAL' IN (away_abbr, home_abbr) AND 'DET' IN (away_abbr, home_abbr)
+  )
+'''
+expected_tools = [["get_game", "search_touchdowns"]]
+max_calls = 3
+reference_calls = [{ tool = "get_game", args = { season = 2019, week = 11, team = "Detroit" } }]
+notes = "Counting a game's touchdowns in one quarter. Both teams scored in it (Dallas 3, Detroit 1), so filtering by either team undercounts. No reference_path: get_game lists the rows but no field holds a per-quarter count. Truth re-derived 2026-11-16 by reading the rows of 2019-11-DAL-DET (quarters 1,2,2,2,2,3,4,4; none on a quarter boundary): 4."
+
+[[case]]
+id = "game-detail-05"
+category = "game_detail"
+split = "heldout"
+question = "Which types of touchdown were scored in the week 10 game between Indianapolis and San Diego in the 2007 regular season? List each type once."
+expect = "answer"
+answer_kind = "set"
+item_type = "td_type"
+truth_sql = '''
+SELECT DISTINCT td_type FROM touchdowns
+WHERE season = 2007 AND week = 10
+  AND game_id IN (
+    SELECT game_id FROM games
+    WHERE 'IND' IN (away_abbr, home_abbr) AND 'SD' IN (away_abbr, home_abbr)
+  )
+'''
+expected_tools = [["get_game", "search_touchdowns"]]
+max_calls = 3
+reference_calls = [{ tool = "get_game", args = { season = 2007, week = 10, team = "San Diego" } }]
+reference_path = "touchdowns[*].td_type"
+notes = "A game's touchdown types as a set, in a game with five of the seven types across six touchdowns, involving a team that has since moved (San Diego in 2007). Truth re-derived 2026-11-16 by counting rows per type in 2007-10-IND-SD: kickoff_return, punt_return, rushing, receiving (2), fumble_return."
+
+[[case]]
+id = "game-detail-06"
+category = "game_detail"
+split = "dev"
+question = "Which players scored a touchdown in the playoff game between Jacksonville and Pittsburgh in the 2007 season?"
+expect = "answer"
+answer_kind = "set"
+item_type = "player_slug"
+truth_sql = '''
+SELECT DISTINCT player_slug FROM touchdowns
+WHERE season = 2007 AND postseason = 1 AND player_slug IS NOT NULL
+  AND game_id IN (
+    SELECT game_id FROM games
+    WHERE 'JAX' IN (away_abbr, home_abbr) AND 'PIT' IN (away_abbr, home_abbr)
+  )
+'''
+expected_tools = [["get_game", "search_touchdowns"]]
+max_calls = 4
+reference_calls = [
+  { tool = "list_games", args = { season = 2007, team = "Jacksonville", season_type = "postseason" } },
+  { tool = "get_game", args = { game_id = "2007-18-JAX-PIT" } },
+]
+reference_path = "touchdowns[*].scorer.slug"
+notes = "A playoff game given without its week, so it has to be found first. The same two teams also met in Pittsburgh in week 15 of the regular season, with a different set of scorers, and the playoff game was played in January 2008 but belongs to the 2007 season. Eight touchdowns, two players with two each. Truth re-derived 2026-11-16 by reading the rows of 2007-18-JAX-PIT: najeh-davenport, fred-taylor, rashean-mathis, maurice-jones-drew, santonio-holmes, heath-miller."
+
+[[case]]
+id = "game-detail-07"
+category = "game_detail"
+split = "heldout"
+question = "Which players scored more than one touchdown in the week 16 game between Philadelphia and New Orleans in the 2007 regular season?"
+expect = "answer"
+answer_kind = "set"
+item_type = "player_slug"
+truth_sql = '''
+SELECT player_slug FROM touchdowns
+WHERE season = 2007 AND week = 16 AND player_slug IS NOT NULL
+  AND game_id IN (
+    SELECT game_id FROM games
+    WHERE 'PHI' IN (away_abbr, home_abbr) AND 'NO' IN (away_abbr, home_abbr)
+  )
+GROUP BY player_slug
+HAVING COUNT(*) >= 2
+'''
+expected_tools = [["get_game", "search_touchdowns"]]
+max_calls = 3
+reference_calls = [{ tool = "get_game", args = { season = 2007, week = 16, team = "New Orleans" } }]
+notes = "Counting a game's touchdowns per scorer, in a late-season game between two teams that missed the playoffs, which nobody remembers. Seven touchdowns by five players, two of whom scored twice. One of the two did it with two different types (a fumble recovered in the end zone for 0 yards, then a catch), so an agent that looks at one type only, or only at one team, misses a name; his slug is a numbered one. No reference_path: get_game lists the rows but no field counts them per scorer. Truth re-derived 2026-11-16 by reading the rows of 2007-16-PHI-NO, the only meeting of the two teams that season (kevin-curtis-2 at positions 1 and 7, aaron-stecker at 2 and 3, three other players once each): kevin-curtis-2, aaron-stecker."

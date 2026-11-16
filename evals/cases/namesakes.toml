@@ -1,0 +1,114 @@
+# Questions where the name alone picks the wrong player. Two real pairs of namesakes scored
+# in the fixture seasons (Adrian Peterson of Chicago and of Minnesota; Chris Henry of
+# Cincinnati and of Tennessee), and many players carry a numbered slug because an older
+# namesake owns the plain one. The question always says which player is meant the way a fan
+# would: by team, position and season. Truth SQL identifies the player the same way (name,
+# team, position), never by slug, so it does not lean on the server's slug assignment.
+
+[[case]]
+id = "namesakes-01"
+category = "namesakes"
+split = "dev"
+question = "How many touchdowns did Chicago running back Adrian Peterson score against Minnesota in the 2007 regular season?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = '''
+SELECT COUNT(*) FROM touchdowns t
+JOIN players p ON p.slug = t.player_slug
+JOIN games g ON g.game_id = t.game_id
+WHERE p.display_name = 'Adrian Peterson' AND t.team_abbr = 'CHI'
+  AND t.season = 2007 AND t.postseason = 0
+  AND 'MIN' IN (g.away_abbr, g.home_abbr)
+'''
+expected_tools = [["find_players"], ["search_touchdowns", "get_game"]]
+max_calls = 4
+reference_calls = [
+  { tool = "find_players", args = { query = "Adrian Peterson" } },
+  { tool = "search_touchdowns", args = { player = "adrian-peterson", season = 2007, season_type = "regular" } },
+]
+notes = "The two namesakes met twice in 2007 (weeks 6 and 15) and 'Adrian Peterson' scored 5 touchdowns in those games, every one of them for Minnesota: an agent that reads the scorer's name and not his team answers 5. The Chicago back's three 2007 touchdowns came against Seattle, Denver and Green Bay. No reference_path: the answer comes from reading the opponents of his three rows. Truth re-derived 2026-11-16: 0 (the mirror question, Minnesota's player against Chicago, gives 5)."
+
+[[case]]
+id = "namesakes-02"
+category = "namesakes"
+split = "dev"
+question = "List every player named Chris Henry who scored a touchdown in the 2007 regular season."
+expect = "answer"
+answer_kind = "set"
+item_type = "player_slug"
+truth_sql = '''
+SELECT DISTINCT t.player_slug FROM touchdowns t JOIN players p ON p.slug = t.player_slug
+WHERE p.display_name = 'Chris Henry' AND t.season = 2007 AND t.postseason = 0
+'''
+expected_tools = [["find_players"]]
+max_calls = 5
+reference_calls = [
+  { tool = "find_players", args = { query = "Chris Henry" } },
+  { tool = "search_touchdowns", args = { player = "chris-henry", season = 2007, season_type = "regular" } },
+  { tool = "search_touchdowns", args = { player = "chris-henry-2", season = 2007, season_type = "regular" } },
+]
+notes = "Tests that the agent reports both namesakes instead of stopping at the first match. No reference_path: find_players lists everyone of the name whatever the season, so its list of slugs is the answer only by accident of the two-season fixture (where it also shows that both men scored in 2007 alone, which is why it stays the only expected tool). The reference therefore checks each namesake against the season, and the answer is the slugs whose search matched something. Truth re-derived 2026-11-16: chris-henry (Cincinnati receiver) and chris-henry-2 (Tennessee running back), two touchdowns each, all in the 2007 regular season."
+
+[[case]]
+id = "namesakes-03"
+category = "namesakes"
+split = "heldout"
+question = "How many touchdowns of 50 yards or longer did Minnesota running back Adrian Peterson score in the 2007 regular season?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = '''
+SELECT COUNT(*) FROM touchdowns t JOIN players p ON p.slug = t.player_slug
+WHERE p.display_name = 'Adrian Peterson' AND t.team_abbr = 'MIN'
+  AND t.season = 2007 AND t.postseason = 0 AND t.yards >= 50
+'''
+expected_tools = [["find_players"], ["search_touchdowns"]]
+max_calls = 4
+reference_calls = [
+  { tool = "find_players", args = { query = "Adrian Peterson" } },
+  { tool = "search_touchdowns", args = { player = "adrian-peterson-2", season = 2007, min_yards = 50, season_type = "regular" } },
+]
+reference_path = "matched.regular_season"
+notes = "The famous player has the numbered slug: guessing 'adrian-peterson' lands on the Chicago back, whose longest 2007 touchdown was 8 yards, and gives 0. Truth re-derived 2026-11-16: 4 (a 60-yard reception and runs of 73, 67 and 64; the next longest is 46)."
+
+[[case]]
+id = "namesakes-04"
+category = "namesakes"
+split = "dev"
+question = "How many touchdowns did Tampa Bay tight end Alex Smith score in the 2007 season, regular season and playoffs combined?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = '''
+SELECT COUNT(*) FROM touchdowns t JOIN players p ON p.slug = t.player_slug
+WHERE p.display_name = 'Alex Smith' AND p.position = 'TE' AND t.team_abbr = 'TB'
+  AND t.season = 2007
+'''
+expected_tools = [["find_players"], ["search_touchdowns", "get_player"]]
+max_calls = 4
+reference_calls = [
+  { tool = "find_players", args = { query = "Alex Smith" } },
+  { tool = "search_touchdowns", args = { player = "alex-smith-2", season = 2007 } },
+]
+reference_path = "matched.total"
+notes = "A numbered slug whose namesake is not in the fixture: the plain slug 'alex-smith' is refused here as unknown, and the numbering implies that on the full data it is a different Alex Smith, so a guessed slug never works. Also checks that the playoff touchdown is added. Truth re-derived 2026-11-16: 4 (3 regular season, 1 in the week 18 playoff game), all receptions."
+
+[[case]]
+id = "namesakes-05"
+category = "namesakes"
+split = "dev"
+question = "In which games of the 2007 regular season did Tennessee running back Chris Henry score a touchdown?"
+expect = "answer"
+answer_kind = "set"
+item_type = "game_id"
+truth_sql = '''
+SELECT DISTINCT t.game_id FROM touchdowns t JOIN players p ON p.slug = t.player_slug
+WHERE p.display_name = 'Chris Henry' AND t.team_abbr = 'TEN'
+  AND t.season = 2007 AND t.postseason = 0
+'''
+expected_tools = [["find_players"], ["search_touchdowns", "get_player"]]
+max_calls = 4
+reference_calls = [
+  { tool = "find_players", args = { query = "Chris Henry" } },
+  { tool = "search_touchdowns", args = { player = "chris-henry-2", season = 2007, season_type = "regular" } },
+]
+reference_path = "touchdowns[*].game_id"
+notes = "Both Chris Henrys scored exactly twice in 2007, so counts cannot tell them apart and the first find_players match is the Cincinnati receiver (games 2007-11-ARI-CIN and 2007-15-CIN-SF, the wrong answer). Truth re-derived 2026-11-16: 2007-07-TEN-HOU and 2007-08-OAK-TEN, one rushing touchdown in each."

@@ -1,0 +1,151 @@
+# One player's touchdowns in one season. The name has to be turned into a slug first, and the
+# answer then depends on reading the right part of the split: regular season, playoffs or both,
+# one touchdown type, or one team. Five cases ask for a count. Cases 04 and 06 ask for the
+# games instead, because a game id cannot be recalled the way a season total can. Every
+# reference solution filters by season, so it holds against any database, not only the
+# two-season fixture.
+
+[[case]]
+id = "player-season-totals-01"
+category = "player_season_totals"
+split = "dev"
+question = "How many touchdowns did Najeh Davenport score in the 2007 regular season?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = '''
+SELECT COUNT(*) FROM touchdowns
+WHERE player_slug = 'najeh-davenport' AND season = 2007 AND postseason = 0
+'''
+expected_tools = [["find_players"]]
+max_calls = 4
+reference_calls = [
+  { tool = "find_players", args = { query = "Najeh Davenport" } },
+  { tool = "search_touchdowns", args = { player = "najeh-davenport", season = 2007 } },
+]
+reference_path = "matched.regular_season"
+notes = "Regular season only, for a backup who also scored twice in the playoffs, so the season total (9) is the wrong answer. Truth re-derived 2026-11-16: 7 (5 rushing, 2 receiving, weeks 3 to 17)."
+
+[[case]]
+id = "player-season-totals-02"
+category = "player_season_totals"
+split = "dev"
+question = "How many touchdowns did Anthony Firkser score in the playoffs that followed the 2019 regular season?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = '''
+SELECT COUNT(*) FROM touchdowns
+WHERE player_slug = 'anthony-firkser' AND season = 2019 AND postseason = 1
+'''
+expected_tools = [["find_players"]]
+max_calls = 4
+reference_calls = [
+  { tool = "find_players", args = { query = "Anthony Firkser" } },
+  { tool = "search_touchdowns", args = { player = "anthony-firkser", season = 2019 } },
+]
+reference_path = "matched.postseason"
+notes = "Playoffs only. The games were played in January 2020 but belong to the 2019 season. He scored more in the playoffs than in the regular season (1), so neither the regular-season count nor the total (3) is right. Truth re-derived 2026-11-16: 2 (weeks 18 and 20)."
+
+[[case]]
+id = "player-season-totals-03"
+category = "player_season_totals"
+split = "dev"
+question = "Counting the regular season and the playoffs together, how many touchdowns did Brandon Jacobs score in the 2007 season?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = '''
+SELECT COUNT(*) FROM touchdowns
+WHERE player_slug = 'brandon-jacobs' AND season = 2007
+'''
+expected_tools = [["find_players"]]
+max_calls = 4
+reference_calls = [
+  { tool = "find_players", args = { query = "Brandon Jacobs" } },
+  { tool = "search_touchdowns", args = { player = "brandon-jacobs", season = 2007 } },
+]
+reference_path = "matched.total"
+notes = "Regular season and playoffs combined, where the two differ a lot: an agent that reports the regular-season count alone says 6. Truth re-derived 2026-11-16: 10 (6 in weeks 5 to 17, 4 in playoff weeks 18 to 20)."
+
+[[case]]
+id = "player-season-totals-04"
+category = "player_season_totals"
+split = "heldout"
+question = "In which game of the 2007 regular season did Baltimore's Yamon Figurs return a kickoff for a touchdown?"
+expect = "answer"
+answer_kind = "set"
+item_type = "game_id"
+truth_sql = '''
+SELECT DISTINCT game_id FROM touchdowns
+WHERE player_slug = 'yamon-figurs' AND season = 2007 AND postseason = 0
+  AND td_type = 'kickoff_return'
+'''
+expected_tools = [["find_players"], ["search_touchdowns", "get_player"]]
+max_calls = 4
+reference_calls = [
+  { tool = "find_players", args = { query = "Yamon Figurs" } },
+  { tool = "search_touchdowns", args = { player = "yamon-figurs", season = 2007, td_type = "kickoff_return" } },
+]
+reference_path = "touchdowns[*].game_id"
+notes = "One touchdown type for a little-known return specialist, asked as the game and not as a count, so nothing can be recalled. He scored twice that season, both times on a return: a punt in week 3 (2007-03-ARI-BAL) and this kickoff. The two return types must be kept apart, and his first touchdown is the wrong one. Truth re-derived 2026-11-16: 2007-14-IND-BAL (week 14, 94 yards, Baltimore's only kickoff-return touchdown of the season)."
+
+[[case]]
+id = "player-season-totals-05"
+category = "player_season_totals"
+split = "dev"
+question = "How many touchdowns did Jacksonville cornerback Rashean Mathis score in the 2007 regular season?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = '''
+SELECT COUNT(*) FROM touchdowns
+WHERE player_slug = 'rashean-mathis' AND season = 2007 AND postseason = 0
+'''
+expected_tools = [["find_players"]]
+max_calls = 4
+reference_calls = [
+  { tool = "find_players", args = { query = "Rashean Mathis" } },
+  { tool = "search_touchdowns", args = { player = "rashean-mathis", season = 2007 } },
+]
+reference_path = "matched.regular_season"
+notes = "A defensive player whose only touchdown of the season, an interception return, came in a playoff game (week 18). The right answer is zero; an agent that sees him listed with one touchdown and reports it is wrong, and so is one that declines. Truth re-derived 2026-11-16: 0 (his single 2007 row has postseason = 1)."
+
+[[case]]
+id = "player-season-totals-06"
+category = "player_season_totals"
+split = "dev"
+question = "Emmanuel Sanders changed teams during the 2019 season. In which games did he score a touchdown for San Francisco in that regular season?"
+expect = "answer"
+answer_kind = "set"
+item_type = "game_id"
+truth_sql = '''
+SELECT DISTINCT game_id FROM touchdowns
+WHERE player_slug = 'emmanuel-sanders' AND season = 2019 AND postseason = 0
+  AND team_abbr = 'SF'
+'''
+expected_tools = [["find_players"], ["search_touchdowns"]]
+max_calls = 4
+reference_calls = [
+  { tool = "find_players", args = { query = "Emmanuel Sanders" } },
+  { tool = "search_touchdowns", args = { player = "emmanuel-sanders", team = "San Francisco", season = 2019, season_type = "regular" } },
+]
+reference_path = "touchdowns[*].game_id"
+notes = "The games with one of the two teams a player scored for in the same season. His count could be recalled; the game ids cannot. His first two touchdowns of 2019 were for Denver (2019-01-DEN-OAK, 2019-02-CHI-DEN) and must be left out. San Francisco then played three playoff games, in which he did not score. Truth re-derived 2026-11-16: 2019-08-CAR-SF, 2019-09-SF-ARI, 2019-14-SF-NO (one reception in each; his season total is 5)."
+
+[[case]]
+id = "player-season-totals-07"
+category = "player_season_totals"
+split = "heldout"
+question = "Samkon Gado played for two teams in 2007. How many touchdowns did he score for Miami in that regular season?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = '''
+SELECT COUNT(*) FROM touchdowns
+WHERE player_slug = 'samkon-gado' AND season = 2007 AND postseason = 0
+  AND franchise = 'MIA'
+'''
+expected_tools = [["find_players"], ["search_touchdowns", "get_player"]]
+max_calls = 4
+reference_calls = [
+  { tool = "find_players", args = { query = "Samkon Gado" } },
+  { tool = "search_touchdowns", args = { player = "samkon-gado", team = "Miami", season = 2007 } },
+]
+reference_path = "matched.regular_season"
+notes = "A player who changed teams during the season: the count for one team is less than his season total (4, one of them for Houston in week 3). Truth re-derived 2026-11-16: 3 (two in week 14, one in week 15, all for MIA)."

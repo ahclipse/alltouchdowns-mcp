@@ -1,0 +1,103 @@
+# Touchdowns that are not a run or a catch: returns of interceptions, fumbles, punts and
+# kickoffs, and the catch-all type 'other'. Their scorers are mostly defenders and return
+# specialists, whom a model does not remember, so these need the td_type filter. The fumble
+# type is wider than its name (it also holds fumbles recovered in the end zone and blocked
+# kicks), so a question about it describes what it holds instead of saying "fumble return".
+
+[[case]]
+id = "return-types-01"
+category = "return_types"
+split = "dev"
+question = "How many touchdowns in the 2019 season came on a recovered fumble or blocked kick, whether the ball was run back or just recovered in the end zone? Count both the regular season and the playoffs."
+expect = "answer"
+answer_kind = "number"
+truth_sql = "SELECT COUNT(*) FROM touchdowns WHERE season = 2019 AND td_type = 'fumble_return'"
+expected_tools = [["search_touchdowns"]]
+max_calls = 3
+reference_calls = [{ tool = "search_touchdowns", args = { season = 2019, td_type = "fumble_return", limit = 1 } }]
+reference_path = "matched.total"
+notes = "A count of one type in one season, where the split matters: 39 in the regular season plus 1 in the playoffs (lonnie-johnson-2, week 19). The question describes everything the dataset's fumble_return type holds, because the type is wider than its name: besides fumbles run back it has loose balls recovered in the end zone (five rows of 0 yards here) and returns of blocked kicks (the playoff row is one), so it is higher than an official fumble-return total. The season has no touchdown of type 'other', so an agent that looks there for the blocked kicks adds nothing. Truth re-derived 2026-11-16 by splitting the rows on the game's date: 39 before 4 January 2020 and 1 after, 40."
+
+[[case]]
+id = "return-types-02"
+category = "return_types"
+split = "dev"
+question = "Which Minnesota players returned an interception for a touchdown in the 2007 regular season?"
+expect = "answer"
+answer_kind = "set"
+item_type = "player_slug"
+truth_sql = '''
+SELECT DISTINCT player_slug FROM touchdowns
+WHERE season = 2007 AND postseason = 0 AND td_type = 'int_return' AND team_abbr = 'MIN'
+  AND player_slug IS NOT NULL
+'''
+expected_tools = [["search_touchdowns", "get_leaderboard"]]
+max_calls = 3
+reference_calls = [{ tool = "search_touchdowns", args = { team = "Minnesota", season = 2007, td_type = "int_return", season_type = "regular" } }]
+reference_path = "touchdowns[*].scorer.slug"
+notes = "One return type for one team: six touchdowns by five players, so one name appears twice, and that player's slug carries a suffix. Truth re-derived 2026-11-16 by reading the six rows: kevin-williams-2 (twice), antoine-winfield, darren-sharper, dwight-smith, chad-greenway."
+
+[[case]]
+id = "return-types-03"
+category = "return_types"
+split = "dev"
+question = "Which players scored touchdowns in the game that had the longest punt return for a touchdown of the 2019 regular season?"
+expect = "answer"
+answer_kind = "set"
+item_type = "player_slug"
+truth_sql = '''
+SELECT DISTINCT player_slug FROM touchdowns
+WHERE player_slug IS NOT NULL AND game_id = (
+  SELECT game_id FROM touchdowns
+  WHERE season = 2019 AND postseason = 0 AND td_type = 'punt_return'
+  ORDER BY yards DESC LIMIT 1
+)
+'''
+expected_tools = [["search_touchdowns"], ["get_game"]]
+max_calls = 4
+reference_calls = [
+  { tool = "search_touchdowns", args = { season = 2019, td_type = "punt_return", season_type = "regular", order = "longest", limit = 1 } },
+  { tool = "get_game", args = { game_id = "2019-14-PIT-ARI" } },
+]
+reference_path = "touchdowns[*].scorer.slug"
+notes = "Two steps: the longest return of a type, then every scorer in that game. The longest is unique but only just: 85 yards by diontae-johnson in 2019-14-PIT-ARI, then 84 by nyheim-hines. Truth re-derived 2026-11-16 by reading the game's four rows: diontae-johnson (twice), charles-clay, david-johnson-2."
+
+[[case]]
+id = "return-types-04"
+category = "return_types"
+split = "heldout"
+question = "Which players returned more than one kickoff for a touchdown in the 2007 regular season?"
+expect = "answer"
+answer_kind = "set"
+item_type = "player_slug"
+truth_sql = '''
+SELECT player_slug FROM touchdowns
+WHERE season = 2007 AND postseason = 0 AND td_type = 'kickoff_return' AND player_slug IS NOT NULL
+GROUP BY player_slug HAVING COUNT(*) > 1
+'''
+expected_tools = [["get_leaderboard", "search_touchdowns"]]
+max_calls = 3
+reference_calls = [{ tool = "get_leaderboard", args = { season = 2007, td_type = "kickoff_return", limit = 4 } }]
+reference_path = "rows[*].player.slug"
+notes = "Everyone with more than one touchdown of a type. The reference asks for 4 ranks so that the result is exactly the answer; an agent using the default limit gets 15 more players with one each and has to leave them out. Truth re-derived 2026-11-16 by reading the 25 rows: andre-davis-2 and leon-washington 3 each, devin-hester and josh-cribbs 2 each."
+
+[[case]]
+id = "return-types-05"
+category = "return_types"
+split = "dev"
+question = "What kinds of touchdowns did San Diego cornerback Antonio Cromartie score in the 2007 regular season?"
+expect = "answer"
+answer_kind = "set"
+item_type = "td_type"
+truth_sql = '''
+SELECT DISTINCT td_type FROM touchdowns
+WHERE player_slug = 'antonio-cromartie' AND season = 2007 AND postseason = 0
+'''
+expected_tools = [["find_players"], ["search_touchdowns", "get_player"]]
+max_calls = 4
+reference_calls = [
+  { tool = "find_players", args = { query = "Antonio Cromartie" } },
+  { tool = "search_touchdowns", args = { player = "antonio-cromartie", season = 2007, season_type = "regular" } },
+]
+reference_path = "touchdowns[*].td_type"
+notes = "The 'other' type as an answer: his three touchdowns are one each of three kinds, and one of them is the season's only 'other' touchdown, which must be reported with the tool's own value. Needs find_players first. Truth re-derived 2026-11-16 by reading his three rows: fumble_return (week 8), int_return (week 8), other (week 9, 109 yards)."

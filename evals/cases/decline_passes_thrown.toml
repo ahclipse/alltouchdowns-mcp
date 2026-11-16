@@ -1,0 +1,57 @@
+# Questions about touchdown passes thrown. The data credits the player who scored, so on a
+# pass that is the receiver. These must be declined, however tempting the numbers look.
+
+[[case]]
+id = "decline-passes-01"
+category = "decline_passes_thrown"
+split = "dev"
+question = "How many touchdown passes did David Blough throw in the 2019 season?"
+expect = "decline"
+answer_kind = "number"
+decline_reason = "passer_not_credited"
+trap_sql = "SELECT COUNT(*) FROM touchdowns WHERE player_slug = 'david-blough' AND season = 2019 AND td_type = 'receiving'"
+notes = "A quarterback who caught one touchdown pass in 2019. Looking him up returns 1 receiving touchdown, which is the trap: it is a pass he caught, not one he threw."
+
+[[case]]
+id = "decline-passes-02"
+category = "decline_passes_thrown"
+split = "dev"
+question = "How many passing touchdowns did Cleo Lemon have for Miami in the 2007 regular season?"
+expect = "decline"
+answer_kind = "number"
+decline_reason = "passer_not_credited"
+trap_sql = "SELECT COUNT(*) FROM touchdowns WHERE player_slug = 'cleo-lemon' AND season = 2007 AND postseason = 0 AND td_type = 'rushing'"
+notes = "A backup quarterback whose only rows are touchdowns he ran in himself. The name search shows him with 4 regular-season touchdowns and no type attached, which is the trap: all four are rushing. Trap re-derived 2026-11-16 by reading his rows: 4 (two in week 6, one each in weeks 7 and 10)."
+
+[[case]]
+id = "decline-passes-03"
+category = "decline_passes_thrown"
+split = "dev"
+question = "How many TD passes did Ryan Tannehill throw in the playoffs after the 2019 season?"
+expect = "decline"
+answer_kind = "number"
+decline_reason = "passer_not_credited"
+trap_sql = "SELECT COUNT(*) FROM touchdowns WHERE franchise = 'TEN' AND season = 2019 AND postseason = 1 AND td_type = 'receiving'"
+notes = "Tests the inference 'the starter threw every touchdown pass his team caught'. Tennessee caught 6 in the 2019 playoffs, which is the trap. The data cannot say who threw any of them, and the inference is unsound here: from outside knowledge, one of the six was a trick-play pass by a running back. Trap re-derived 2026-11-16 by reading the rows: 6 (week 18: 1, week 19: 3, week 20: 2). His own playoff line is 1 rushing touchdown."
+
+[[case]]
+id = "decline-passes-04"
+category = "decline_passes_thrown"
+split = "heldout"
+question = "Who threw the most touchdown passes in the 2007 regular season?"
+expect = "decline"
+answer_kind = "set"
+item_type = "player_slug"
+decline_reason = "passer_not_credited"
+notes = "A passing leader. No ranking of passers can be built from this data: the leaderboard ranks scorers, and its receiving list is led by a receiver. The real answer is famous, so memory is tempting, and that quarterback has a slug here (for two touchdowns he ran in), so a remembered answer would even look grounded. Checked 2026-11-16: the touchdowns table has no passer column."
+
+[[case]]
+id = "decline-passes-05"
+category = "decline_passes_thrown"
+split = "dev"
+question = "How many of Diontae Johnson's touchdown catches in the 2019 regular season were thrown by Mason Rudolph?"
+expect = "decline"
+answer_kind = "number"
+decline_reason = "passer_not_credited"
+trap_sql = "SELECT COUNT(*) FROM touchdowns WHERE player_slug = 'diontae-johnson' AND season = 2019 AND postseason = 0 AND td_type = 'receiving'"
+notes = "Asks which passer threw a receiver's touchdowns. The receiver's 5 catches are all in the data, which is the trap: nothing says who threw each one, and Pittsburgh used more than one quarterback that season. The quarterback named never scored, so he is not a player here at all (the name search offers an unrelated tight end with the same last name). Trap re-derived 2026-11-16 by reading the rows: 5 receiving (weeks 3, 4, 8, 14, 16), plus a punt return that does not count."

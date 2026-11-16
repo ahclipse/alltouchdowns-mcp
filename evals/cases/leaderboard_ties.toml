@@ -1,0 +1,230 @@
+# Leaderboards where players are tied at the cut-off. The tool keeps the whole tied group, so
+# a correct answer has more rows than the "top N" asked for.
+
+[[case]]
+id = "leaderboard-ties-01"
+category = "leaderboard_ties"
+split = "dev"
+question = "List the top 3 scorers of interception-return touchdowns in the 2007 regular season, best first. Include every player tied with third place."
+expect = "answer"
+answer_kind = "ordered_list"
+item_type = "player_slug"
+truth_sql = '''
+WITH counts AS (
+  SELECT player_slug, COUNT(*) AS n FROM touchdowns
+  WHERE season = 2007 AND postseason = 0 AND td_type = 'int_return' AND player_slug IS NOT NULL
+  GROUP BY player_slug
+)
+SELECT player_slug, n FROM counts
+WHERE n >= (SELECT n FROM counts ORDER BY n DESC LIMIT 1 OFFSET 2)
+ORDER BY n DESC, player_slug
+'''
+expected_tools = [["get_leaderboard"]]
+max_calls = 3
+reference_calls = [{ tool = "get_leaderboard", args = { season = 2007, td_type = "int_return", limit = 3 } }]
+reference_path = "rows[*].player.slug"
+notes = "One player has 3, then five are tied on 2, so six rows. Defensive scorers are not memorable, so this needs the tool."
+
+# The cases below vary what is ranked: another type and season, one team, the playoffs alone,
+# and the regular season and playoffs together. One has no tie at all, as a control, and one
+# asks for the size of the tied group at the top instead of its members.
+
+[[case]]
+id = "leaderboard-ties-02"
+category = "leaderboard_ties"
+split = "dev"
+question = "Who had the most receiving touchdowns in the 2019 regular season? Give the top 5, best first, and include every player tied with fifth place."
+expect = "answer"
+answer_kind = "ordered_list"
+item_type = "player_slug"
+truth_sql = '''
+WITH counts AS (
+  SELECT player_slug, COUNT(*) AS n FROM touchdowns
+  WHERE season = 2019 AND postseason = 0 AND td_type = 'receiving' AND player_slug IS NOT NULL
+  GROUP BY player_slug
+)
+SELECT player_slug, n FROM counts
+WHERE n >= (SELECT n FROM counts ORDER BY n DESC LIMIT 1 OFFSET 4)
+ORDER BY n DESC, player_slug
+'''
+expected_tools = [["get_leaderboard"]]
+max_calls = 3
+reference_calls = [{ tool = "get_leaderboard", args = { season = 2019, td_type = "receiving", limit = 5 } }]
+reference_path = "rows[*].player.slug"
+notes = "A tie at the cut-off in another type and season, with a second tie above it: one player on 11, two on 10, then five tied on 9, so a top 5 is eight rows. Truth re-derived 2026-11-16: kenny-golladay 11; cooper-kupp, mark-andrews 10; chris-godwin-jr, devante-parker, jared-cook, marvin-jones-2, michael-thomas-2 9; next is 8."
+
+[[case]]
+id = "leaderboard-ties-03"
+category = "leaderboard_ties"
+split = "dev"
+question = "Which three Philadelphia players caught the most touchdowns in the 2007 regular season? List them best first."
+expect = "answer"
+answer_kind = "ordered_list"
+item_type = "player_slug"
+truth_sql = '''
+WITH counts AS (
+  SELECT player_slug, COUNT(*) AS n FROM touchdowns
+  WHERE season = 2007 AND postseason = 0 AND td_type = 'receiving' AND team_abbr = 'PHI'
+    AND player_slug IS NOT NULL
+  GROUP BY player_slug
+)
+SELECT player_slug, n FROM counts
+WHERE n >= (SELECT n FROM counts ORDER BY n DESC LIMIT 1 OFFSET 2)
+ORDER BY n DESC, player_slug
+'''
+expected_tools = [["get_leaderboard"]]
+max_calls = 3
+reference_calls = [{ tool = "get_leaderboard", args = { season = 2007, team = "Philadelphia", td_type = "receiving", limit = 3 } }]
+reference_path = "rows[*].player.slug"
+notes = "The control: a top N with no tie anywhere, so exactly three rows, with the team and type filters together. Without the type filter the order is different (brian-westbrook leads on 12). Truth re-derived 2026-11-16: kevin-curtis-2 6, brian-westbrook 5, reggie-brown-3 4; next is greg-lewis-2 on 3."
+
+[[case]]
+id = "leaderboard-ties-04"
+category = "leaderboard_ties"
+split = "heldout"
+question = "Which Kansas City players scored the most touchdowns in the 2019 regular season? Give the top 3, best first, and include anyone tied with third place."
+expect = "answer"
+answer_kind = "ordered_list"
+item_type = "player_slug"
+truth_sql = '''
+WITH counts AS (
+  SELECT player_slug, COUNT(*) AS n FROM touchdowns
+  WHERE season = 2019 AND postseason = 0 AND team_abbr = 'KC' AND player_slug IS NOT NULL
+  GROUP BY player_slug
+)
+SELECT player_slug, n FROM counts
+WHERE n >= (SELECT n FROM counts ORDER BY n DESC LIMIT 1 OFFSET 2)
+ORDER BY n DESC, player_slug
+'''
+expected_tools = [["get_leaderboard"]]
+max_calls = 3
+reference_calls = [{ tool = "get_leaderboard", args = { season = 2019, team = "Kansas City", limit = 3 } }]
+reference_path = "rows[*].player.slug"
+notes = "A one-team leaderboard whose whole top 3 is a single three-way tie, so any order is right and the fourth player (travis-kelce, 6) must be left out. Counting the playoffs as well would give a different list. Truth re-derived 2026-11-16: damien-williams, mecole-hardman and tyreek-hill, 7 each."
+
+[[case]]
+id = "leaderboard-ties-05"
+category = "leaderboard_ties"
+split = "dev"
+question = "Counting the regular season and the playoffs together, the championship game included, who were the top 5 touchdown scorers of the 2019 season? List them best first, and include every player tied with fifth place."
+expect = "answer"
+answer_kind = "ordered_list"
+item_type = "player_slug"
+truth_sql = '''
+WITH counts AS (
+  SELECT player_slug, COUNT(*) AS n FROM touchdowns
+  WHERE season = 2019 AND player_slug IS NOT NULL
+  GROUP BY player_slug
+)
+SELECT player_slug, n FROM counts
+WHERE n >= (SELECT n FROM counts ORDER BY n DESC LIMIT 1 OFFSET 4)
+ORDER BY n DESC, player_slug
+'''
+expected_tools = [["get_leaderboard"]]
+max_calls = 3
+reference_calls = [{ tool = "get_leaderboard", args = { season = 2019, season_type = "all", limit = 5 } }]
+reference_path = "rows[*].player.slug"
+notes = "The combined ranking differs from the tool's default, regular season only, where christian-mccaffrey and aaron-jones-2 share the lead on 19 and raheem-mostert (10) is nowhere near the top 5. Re-sorting the default leaderboard by its total column does not work either: it misses Mostert and dalvin-cook. Truth re-derived 2026-11-16: aaron-jones-2 23 (19+4), derrick-henry 20 (18+2), christian-mccaffrey 19 (19+0), then dalvin-cook (13+2), mark-ingram-2 (15+0) and raheem-mostert (10+5) tied on 15, so six rows; next is 14. One of Mostert's five playoff touchdowns came in the championship game, hence the wording."
+
+[[case]]
+id = "leaderboard-ties-06"
+category = "leaderboard_ties"
+split = "dev"
+question = "Who scored the most touchdowns in the playoffs that followed the 2019 regular season, the championship game included? Give the top 3, best first, and include every player tied with third place."
+expect = "answer"
+answer_kind = "ordered_list"
+item_type = "player_slug"
+truth_sql = '''
+WITH counts AS (
+  SELECT player_slug, COUNT(*) AS n FROM touchdowns
+  WHERE season = 2019 AND postseason = 1 AND player_slug IS NOT NULL
+  GROUP BY player_slug
+)
+SELECT player_slug, n FROM counts
+WHERE n >= (SELECT n FROM counts ORDER BY n DESC LIMIT 1 OFFSET 2)
+ORDER BY n DESC, player_slug
+'''
+expected_tools = [["get_leaderboard"]]
+max_calls = 3
+reference_calls = [{ tool = "get_leaderboard", args = { season = 2019, season_type = "postseason", limit = 3 } }]
+reference_path = "rows[*].player.slug"
+notes = "A playoffs-only leaderboard with a tie at the cut-off, so four rows. The question says the championship game counts because leaving it out changes the order. Truth re-derived 2026-11-16 from the rows of weeks 18 to 21: damien-williams 6, raheem-mostert 5, then travis-kelce and aaron-jones-2 on 4; next is marshawn-lynch on 3."
+
+[[case]]
+id = "leaderboard-ties-07"
+category = "leaderboard_ties"
+split = "heldout"
+question = "How many players tied for the most rushing touchdowns in the playoffs that followed the 2007 regular season, the championship game included?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = '''
+WITH counts AS (
+  SELECT player_slug, COUNT(*) AS n FROM touchdowns
+  WHERE season = 2007 AND postseason = 1 AND td_type = 'rushing' AND player_slug IS NOT NULL
+  GROUP BY player_slug
+)
+SELECT COUNT(*) FROM counts WHERE n = (SELECT MAX(n) FROM counts)
+'''
+expected_tools = [["get_leaderboard"]]
+max_calls = 3
+reference_calls = [{ tool = "get_leaderboard", args = { season = 2007, td_type = "rushing", season_type = "postseason", limit = 1 } }]
+notes = "The answer is the size of the tied group at rank 1, which no field holds: a limit of 1 returns exactly the three tied rows and they have to be counted, so there is no reference_path. Truth re-derived 2026-11-16: 3 players (brandon-jacobs, laurence-maroney, ryan-grant) with 3 each, then najeh-davenport on 2. Without the championship game Maroney has 2 and the answer would be 2, hence the wording."
+
+# The last two rank across both fixture seasons instead of inside one, the two ways the tool
+# offers: single seasons side by side (per_season), and each player's seasons added together
+# (no season given). Each uses a team with a player who scored in both seasons, so the two
+# rankings give different lists. Both are marked requires = "fixture" because the reference
+# call leaves the season out, which on a larger database ranks every season loaded; the
+# questions name both seasons, so their truth SQL is right anywhere.
+
+[[case]]
+id = "leaderboard-ties-08"
+category = "leaderboard_ties"
+split = "dev"
+requires = "fixture"
+question = "Taking the 2007 and 2019 regular seasons one at a time rather than adding them together, which New England players had the most rushing touchdowns in a single season? Give the top 3, best first, and include every player tied with third place."
+expect = "answer"
+answer_kind = "ordered_list"
+item_type = "player_slug"
+truth_sql = '''
+WITH counts AS (
+  SELECT player_slug, season, COUNT(*) AS n FROM touchdowns
+  WHERE season IN (2007, 2019) AND postseason = 0 AND td_type = 'rushing' AND team_abbr = 'NE'
+    AND player_slug IS NOT NULL
+  GROUP BY player_slug, season
+)
+SELECT player_slug, n FROM counts
+WHERE n >= (SELECT n FROM counts ORDER BY n DESC LIMIT 1 OFFSET 2)
+ORDER BY n DESC, player_slug
+'''
+expected_tools = [["get_leaderboard"]]
+max_calls = 3
+reference_calls = [{ tool = "get_leaderboard", args = { team = "New England", td_type = "rushing", per_season = true, limit = 3 } }]
+reference_path = "rows[*].player.slug"
+notes = "A ranking of single seasons across both seasons, which is what per_season is for: the rows are player-seasons and each carries its season. Five player-seasons are tied on 3 behind the top two, so a top 3 is seven rows. The default ranking adds the seasons together and gives a different, three-row list, because tom-brady's 2 in 2007 and 3 in 2019 make 5, alone in third. Two calls, one per season, merged by hand also give the right answer. No player is in the answer twice. requires = fixture: with more seasons loaded, leaving the season out ranks all of them. Truth re-derived 2026-11-16 by listing New England's rushing touchdowns game by game: sony-michel 7 (2019), laurence-maroney 6 (2007), then heath-evans and sammy-morris (2007) and brandon-bolden, rex-burkhead and tom-brady (2019) on 3; next are kyle-eckel and tom-brady's 2007 season on 2."
+
+[[case]]
+id = "leaderboard-ties-09"
+category = "leaderboard_ties"
+split = "dev"
+requires = "fixture"
+question = "Adding each player's two seasons together, which New Orleans players scored the most rushing touchdowns in the 2007 and 2019 regular seasons combined? Give the top 5, best first, and include every player tied with fifth place."
+expect = "answer"
+answer_kind = "ordered_list"
+item_type = "player_slug"
+truth_sql = '''
+WITH counts AS (
+  SELECT player_slug, COUNT(*) AS n FROM touchdowns
+  WHERE season IN (2007, 2019) AND postseason = 0 AND td_type = 'rushing' AND team_abbr = 'NO'
+    AND player_slug IS NOT NULL
+  GROUP BY player_slug
+)
+SELECT player_slug, n FROM counts
+WHERE n >= (SELECT n FROM counts ORDER BY n DESC LIMIT 1 OFFSET 4)
+ORDER BY n DESC, player_slug
+'''
+expected_tools = [["get_leaderboard"]]
+max_calls = 3
+reference_calls = [{ tool = "get_leaderboard", args = { team = "New Orleans", td_type = "rushing", limit = 5 } }]
+reference_path = "rows[*].player.slug"
+notes = "A ranking over both seasons added together, made by leaving the season out. Three players share first place on 5, one from 2007 and two from 2019, so no single-season leaderboard shows the tie; then one on 4; then two tied for fifth on 2, so six rows. One of those two, drew-brees, has 1 in each season and reaches the list only when the seasons are added: a ranking of single seasons, or the two seasons looked up separately and not summed, leaves him out. alvin-kamara also has a playoff rushing touchdown, which would put him alone in first if it were counted. requires = fixture: with more seasons loaded, leaving the season out adds up all of them. Truth re-derived 2026-11-16 by listing New Orleans's rushing touchdowns game by game: aaron-stecker (2007), alvin-kamara and latavius-murray (2019) 5; reggie-bush 4 (2007); mike-karney 2 (2007) and drew-brees 2 (1 + 1); next are three players on 1."

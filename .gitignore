@@ -1,0 +1,46 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+dist/
+*.egg-info/
+
+# Databases, and copies or dumps of one. The committed two-season fixture is the only
+# tracked one.
+*.db
+*.db-wal
+*.db-shm
+*.db.*
+*-journal
+*.sqlite*
+*.sql
+*.gz
+!tests/fixtures/seasons-2007-2019.db
+!src/alltouchdowns_mcp/export/schema.sql
+
+# Private planning notes and box-specific settings. Never public.
+PLAN.md
+docs/private/
+.env
+.env.*
+*.env
+.envrc
+!.env.example
+
+# Keys, certificates and server configuration belong on the server only.
+*.pem
+*.key
+deploy/certs/
+deploy/Caddyfile
+
+# Local tool settings
+.claude/
+.mcp.json
+CLAUDE.local.md
+.DS_Store
+
+# Eval run output (scores, transcripts)
+evals/runs/
+evals/shared/

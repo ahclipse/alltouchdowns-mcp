@@ -1,0 +1,98 @@
+# Playoff questions. Weeks keep counting into the playoffs (18 to 21 in these seasons), a
+# season's playoff games are played in the following January and February, and the final game
+# of a season is the Championship. Counts are always split into regular season and playoffs,
+# so reporting the wrong half of the split is the usual mistake. A question says "the playoffs
+# of the 2007 season", never "the 2007 playoffs", which could be read as the calendar year.
+
+[[case]]
+id = "postseason-01"
+category = "postseason"
+split = "heldout"
+question = "Washington played one playoff game in the 2007 season. Who scored the touchdowns in that game, for either team? List the scorers in the order the touchdowns were scored."
+expect = "answer"
+answer_kind = "ordered_list"
+item_type = "player_slug"
+truth_sql = '''
+SELECT t.player_slug, t.game_seq
+FROM touchdowns t JOIN games g ON g.game_id = t.game_id
+WHERE g.season = 2007 AND g.postseason = 1 AND 'WAS' IN (g.away_abbr, g.home_abbr)
+  AND t.player_slug IS NOT NULL
+ORDER BY t.game_seq
+'''
+expected_tools = [["get_game", "search_touchdowns"]]
+max_calls = 4
+reference_calls = [
+  { tool = "list_games", args = { season = 2007, team = "Washington", season_type = "postseason" } },
+  { tool = "get_game", args = { game_id = "2007-18-WAS-SEA" } },
+]
+reference_path = "touchdowns[*].scorer.slug"
+notes = "A first-round playoff game nobody remembers, found through the team's playoff games: it is week 18 of the 2007 season, played in January 2008, so an agent that stops at week 17 or looks in the 2008 season fails. Six touchdowns by six different players make the order strict, and the scorers (a fullback, a third receiver, two defensive backs) and their slugs cannot be recited from memory. Truth re-derived 2026-11-16 by reading the rows of 2007-18-WAS-SEA, Washington's only game dated after December 2007, and checking that quarter and running score rise with game_seq: leonard-weaver, antwaan-randle-el, santana-moss, d-j-hackett, marcus-trufant, jordan-babineaux."
+
+[[case]]
+id = "postseason-02"
+category = "postseason"
+split = "dev"
+question = "Which Green Bay players scored a touchdown in the playoffs of the 2007 season? List them from the most playoff touchdowns to the fewest."
+expect = "answer"
+answer_kind = "ordered_list"
+item_type = "player_slug"
+truth_sql = '''
+SELECT player_slug, COUNT(*) AS n FROM touchdowns
+WHERE season = 2007 AND postseason = 1 AND team_abbr = 'GB' AND player_slug IS NOT NULL
+GROUP BY player_slug
+ORDER BY n DESC, player_slug
+'''
+expected_tools = [["get_leaderboard", "search_touchdowns"]]
+max_calls = 3
+reference_calls = [{ tool = "get_leaderboard", args = { season = 2007, team = "Green Bay", season_type = "postseason" } }]
+reference_path = "rows[*].player.slug"
+notes = "The playoff half of one team's split, as a ranking. A leaderboard counts the regular season unless told otherwise, and Green Bay's regular-season list starts with greg-jennings and holds six players who never scored in these playoffs while leaving out brandon-jackson, so the wrong half gives a wrong list; the three players on one touchdown may come in any order. Green Bay has not moved and no other case is about its 2007 season. Truth re-derived 2026-11-16 game by game: ryan-grant 3 (all in 2007-19-SEA-GB), greg-jennings 2 (same game), then brandon-jackson (that game), donald-driver and donald-lee (2007-20-NYG-GB) 1 each, 8 touchdowns in all."
+
+[[case]]
+id = "postseason-03"
+category = "postseason"
+split = "dev"
+question = "Which players scored at least one touchdown for Tennessee in the playoffs of the 2019 season?"
+expect = "answer"
+answer_kind = "set"
+item_type = "player_slug"
+truth_sql = '''
+SELECT DISTINCT player_slug FROM touchdowns
+WHERE season = 2019 AND postseason = 1 AND team_abbr = 'TEN' AND player_slug IS NOT NULL
+'''
+expected_tools = [["search_touchdowns", "get_leaderboard"]]
+max_calls = 3
+reference_calls = [{ tool = "search_touchdowns", args = { team = "Tennessee", season = 2019, season_type = "postseason" } }]
+reference_path = "touchdowns[*].scorer.slug"
+notes = "Ten touchdowns over three playoff games by eight players, among them a cornerback and an offensive tackle nobody would guess. Truth re-derived 2026-11-16 by grouping the team's rows of week 18 and later: anthony-firkser, corey-davis, dennis-kelly, derrick-henry, jonnu-smith, kalif-raymond, logan-ryan, ryan-tannehill."
+
+[[case]]
+id = "postseason-04"
+category = "postseason"
+split = "dev"
+question = "How many touchdowns were scored in the first round of the playoffs of the 2019 season, the opening weekend with four games?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = "SELECT COUNT(*) FROM touchdowns WHERE season = 2019 AND postseason = 1 AND week = 18"
+expected_tools = [["search_touchdowns", "list_games"]]
+max_calls = 4
+reference_calls = [
+  { tool = "list_games", args = { season = 2019, season_type = "postseason" } },
+  { tool = "search_touchdowns", args = { season = 2019, week = 18 } },
+]
+reference_path = "matched.postseason"
+notes = "The agent has to work out that the first playoff round is week 18, because weeks keep counting after week 17. Truth re-derived 2026-11-16 per game, for the four playoff games dated before 8 January 2020: 3 + 5 + 2 + 4 = 14."
+
+[[case]]
+id = "postseason-05"
+category = "postseason"
+split = "dev"
+question = "Jacksonville made the playoffs in the 2007 season. Leaving the playoff games out, how many touchdowns did Jacksonville score in the 2007 regular season?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = "SELECT COUNT(*) FROM touchdowns WHERE season = 2007 AND postseason = 0 AND team_abbr IN ('JAX', 'JAC')"
+expected_tools = [["search_touchdowns", "get_leaderboard"]]
+max_calls = 3
+reference_calls = [{ tool = "search_touchdowns", args = { team = "Jacksonville", season = 2007 } }]
+reference_path = "matched.regular_season"
+notes = "The regular-season half of a team's split: one search returns regular season 50, playoffs 6 and total 56, and only the first is right. Truth re-derived 2026-11-16 by joining to the games table and grouping on its postseason flag: 50 (and 6 in the playoffs)."

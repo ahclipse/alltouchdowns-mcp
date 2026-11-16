@@ -1,0 +1,27 @@
+AllTouchdowns MCP
+Copyright (c) 2026 Adam Haag
+
+The source code in this repository is licensed under the MIT License (see
+LICENSE).
+
+DATA
+
+The touchdown data this project serves, including the fixture database at
+tests/fixtures/seasons-2007-2019.db, is derived from nflverse
+(https://github.com/nflverse), which publishes it under the Creative Commons
+Attribution 4.0 International license (CC BY 4.0):
+https://creativecommons.org/licenses/by/4.0/
+
+The attribution carried by every response of the server:
+
+    Play-by-play data from nflverse (https://github.com/nflverse), licensed
+    CC BY 4.0. Processed and reformatted. Not affiliated with, endorsed by, or
+    sponsored by the NFL or any NFL team.
+
+Changes made to the data: it has been processed and reformatted. Play
+descriptions are removed, rows are limited to finished games, team
+abbreviations are mapped to city names, and touchdown types are relabelled.
+
+This project is not affiliated with, endorsed by, or sponsored by the NFL or
+any NFL team. Team locations and abbreviations are used for identification
+purposes only.

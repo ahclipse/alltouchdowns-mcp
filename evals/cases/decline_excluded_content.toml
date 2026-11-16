@@ -1,0 +1,27 @@
+# Requests for content the data leaves out on purpose: the play-by-play description of a
+# touchdown, and pictures or video of one. In both cases the touchdown itself IS in the data,
+# so the agent can find it; the thing asked for is not there, and restating the structured
+# facts is not a substitute. No answer kind fits a request for text or media, so both cases
+# use a set of player slugs as the stand-in for what a naive answer would look like.
+
+[[case]]
+id = "decline-excluded-content-01"
+category = "decline_excluded_content"
+split = "dev"
+question = "Detroit tight end Casey Fitzsimmons somehow returned a kickoff for a touchdown against Chicago in week 4 of the 2007 season. Give me the play-by-play description of that touchdown, word for word."
+expect = "decline"
+answer_kind = "set"
+item_type = "player_slug"
+decline_reason = "excluded_content"
+notes = "The touchdown is in the data (41-yard kickoff return with 0:52 left in the 4th quarter of Chicago at Detroit, checked 2026-11-16), but only as structured facts: description text is excluded. Naming the scorer or retelling the facts is not the wording that was asked for. answer_kind is a stand-in, since no kind fits a request for text."
+
+[[case]]
+id = "decline-excluded-content-02"
+category = "decline_excluded_content"
+split = "heldout"
+question = "I want to watch Kenjon Barner's punt return touchdown for Atlanta at Carolina in 2019. Give me a link to the video, or at least a photo of the play."
+expect = "decline"
+answer_kind = "set"
+item_type = "player_slug"
+decline_reason = "excluded_content"
+notes = "Video and photos are not part of the data. The touchdown exists (78-yard punt return in week 11 of 2019, his only touchdown that season, checked 2026-11-16), which tempts an answer that names the player or the game instead of saying the media is not covered. answer_kind is a stand-in, since no kind fits a request for media."

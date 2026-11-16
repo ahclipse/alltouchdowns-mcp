@@ -1,0 +1,93 @@
+# "Los Angeles" and "New York" each have two teams, and the server refuses a bare city name
+# for them (ambiguous_team, naming both abbreviations). Every question here gives enough to
+# know which team is meant, or asks about both teams on purpose. No question hands over an
+# abbreviation: where one team is meant, it is named by its city and a game it played, so the
+# agent has to work out the abbreviation itself.
+
+[[case]]
+id = "ambiguous-cities-01"
+category = "ambiguous_cities"
+split = "dev"
+question = "Los Angeles visited Kansas City in Week 17 of the 2019 regular season. Which Los Angeles players scored a touchdown in that game?"
+expect = "answer"
+answer_kind = "set"
+item_type = "player_slug"
+truth_sql = '''
+SELECT DISTINCT t.player_slug
+FROM touchdowns t JOIN games g ON g.game_id = t.game_id
+WHERE g.season = 2019 AND g.week = 17 AND g.home_abbr = 'KC' AND t.team_abbr <> 'KC'
+  AND t.player_slug IS NOT NULL
+'''
+expected_tools = [["get_game", "list_games", "search_touchdowns"]]
+max_calls = 4
+reference_calls = [
+  { tool = "get_game", args = { season = 2019, week = 17, team = "Kansas City" } },
+  { tool = "search_touchdowns", args = { team = "LAC", season = 2019, week = 17 } },
+]
+reference_path = "touchdowns[*].scorer.slug"
+notes = "The opponent decides which Los Angeles team is meant: both played in Week 17, but only LAC played Kansas City. Truth re-derived 2026-11-16: keenan-allen, melvin-gordon, hunter-henry, one touchdown each, read from the seven rows of 2019-17-LAC-KC (the other four are Kansas City's). The wrong Los Angeles team would give four other names."
+
+[[case]]
+id = "ambiguous-cities-02"
+category = "ambiguous_cities"
+split = "dev"
+question = "One of the two New York teams played at Dallas in week 12 of the 2007 season. How many touchdowns did that New York team score over the whole 2007 regular season?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = '''
+SELECT COUNT(*) FROM touchdowns
+WHERE season = 2007 AND postseason = 0 AND team_abbr = (
+  SELECT g.away_abbr FROM games g JOIN teams tm ON tm.abbr = g.away_abbr
+  WHERE g.season = 2007 AND g.week = 12 AND g.home_abbr = 'DAL' AND tm.city = 'New York'
+)
+'''
+expected_tools = [["get_game", "list_games"], ["search_touchdowns", "get_leaderboard"]]
+max_calls = 4
+reference_calls = [
+  { tool = "get_game", args = { season = 2007, week = 12, team = "Dallas" } },
+  { tool = "search_touchdowns", args = { team = "NYJ", season = 2007, season_type = "regular" } },
+]
+reference_path = "matched.regular_season"
+notes = "The team is named only by its city and one game, so a bare 'New York' is refused and the agent has to find out which team it was and then pass that abbreviation. Exactly one New York team played at Dallas in week 12 (2007-12-NYJ-DAL); the other New York team is the tempting guess, because it plays at Dallas every year and did so twice in this season (week 1 and the week 19 playoff game), and it gives 44. The named game cannot be mistaken for the answer: the team scored no touchdown in it. Truth re-derived 2026-11-16 by adding up the team's 16 regular-season games: 26 (15 receiving, 6 rushing, 3 kickoff returns, 2 fumble returns)."
+
+[[case]]
+id = "ambiguous-cities-03"
+category = "ambiguous_cities"
+split = "dev"
+question = "Which of the two Los Angeles teams had more receiving touchdowns in the 2019 regular season?"
+expect = "answer"
+answer_kind = "set"
+item_type = "team_abbr"
+truth_sql = '''
+WITH counts AS (
+  SELECT team_abbr, COUNT(*) AS n FROM touchdowns
+  WHERE season = 2019 AND postseason = 0 AND td_type = 'receiving'
+    AND team_abbr IN ('LA', 'LAC')
+  GROUP BY team_abbr
+)
+SELECT team_abbr FROM counts WHERE n = (SELECT MAX(n) FROM counts)
+'''
+expected_tools = [["search_touchdowns", "get_leaderboard"]]
+max_calls = 4
+reference_calls = [
+  { tool = "search_touchdowns", args = { team = "LA", season = 2019, td_type = "receiving", season_type = "regular" } },
+  { tool = "search_touchdowns", args = { team = "LAC", season = 2019, td_type = "receiving", season_type = "regular" } },
+]
+notes = "Needs both teams, so one call per abbreviation and a comparison; no single field holds the answer. Truth re-derived 2026-11-16: LAC with 24, against 22 for LA. The team with more touchdowns overall (LA, 46 to 37) is the wrong answer here, so a guess from the standings fails."
+
+[[case]]
+id = "ambiguous-cities-04"
+category = "ambiguous_cities"
+split = "heldout"
+question = "How many touchdowns did the two New York teams score between them in Week 10 of the 2019 regular season?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = '''
+SELECT COUNT(*) FROM touchdowns
+WHERE season = 2019 AND postseason = 0 AND week = 10 AND team_abbr IN ('NYG', 'NYJ')
+'''
+expected_tools = [["get_game", "search_touchdowns", "list_games"]]
+max_calls = 3
+reference_calls = [{ tool = "get_game", args = { season = 2019, week = 10, team = "NYG" } }]
+reference_path = "game.touchdown_count"
+notes = "A combined count across both New York teams. They played each other that week (2019-10-NYG-NYJ), so the game's own count is the answer; an agent that looks up each team and adds the two game totals counts everything twice and gets 16. Truth re-derived 2026-11-16: 8, four each, by reading the game's rows."

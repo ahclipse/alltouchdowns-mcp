@@ -1,0 +1,33 @@
+name: CI
+
+# Runs on every pull request and push. Uses no secrets and calls no model, so it is safe to
+# run on pull requests from forks.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - run: uv sync --locked --extra evals
+      - run: uv run ruff check
+      - run: uv run ruff format --check
+      - run: uv run pyright
+      - run: uv run pytest -q
+      # Free checks of the eval suite itself: every case is well formed, its ground truth runs,
+      # and its scripted solution reproduces that truth through the real tools.
+      - run: uv run python -m evals preflight
+      # The whole harness, with scripted stand-ins for the model: must score 100% and 0%.
+      - run: uv run python -m evals selftest

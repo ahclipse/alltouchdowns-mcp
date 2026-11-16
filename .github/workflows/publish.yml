@@ -1,0 +1,43 @@
+name: Publish to the MCP Registry
+
+# Runs when a version tag (v1.2.3) is pushed. It lists the already-deployed server in the
+# official MCP Registry; it does not deploy anything.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  id-token: write # lets the job prove to the registry which GitHub account it runs for
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # The publisher runs with this job's identity token, so the download is checked against
+      # a checksum written down here. Update both lines together.
+      PUBLISHER_VERSION: v1.8.9
+      PUBLISHER_SHA256: 4d527ca8f1ced0394c962dc925c2a4a4addef441cbefd62501c875e9481823a8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: The tag must match the version in server.json
+        run: test "v$(jq -r .version server.json)" = "$GITHUB_REF_NAME"
+
+      # Listing a server that is down helps nobody, so check it answers first.
+      - name: The public server must be healthy
+        run: |
+          url=$(jq -r '.remotes[0].url' server.json)
+          curl --silent --fail --max-time 20 "${url%/mcp}/healthz"
+
+      - name: Install the registry publisher
+        run: |
+          base=https://github.com/modelcontextprotocol/registry/releases/download
+          curl --silent --fail --location --output publisher.tar.gz \
+            "$base/$PUBLISHER_VERSION/mcp-publisher_linux_amd64.tar.gz"
+          echo "$PUBLISHER_SHA256  publisher.tar.gz" | sha256sum --check
+          tar xzf publisher.tar.gz mcp-publisher
+
+      - run: ./mcp-publisher login github-oidc
+      - run: ./mcp-publisher publish
