@@ -25,7 +25,16 @@ jobs:
       - run: uv run ruff check
       - run: uv run ruff format --check
       - run: uv run pyright
-      - run: uv run pytest -q
+      - name: Tests
+        shell: bash # with pipefail, so a failing test run fails the step despite the pipe
+        env:
+          COLUMNS: "200" # room for the reason on each line of pytest's summary
+        run: uv run pytest -q 2>&1 | tee pytest.log
+      # Each failed test becomes an annotation, so it shows at the top of the run without
+      # anyone having to open the log.
+      - name: Name the failed tests
+        if: failure()
+        run: grep -E '^(FAILED|ERROR) ' pytest.log | head -n 10 | sed 's/^/::error::/' || true
       # Free checks of the eval suite itself: every case is well formed, its ground truth runs,
       # and its scripted solution reproduces that truth through the real tools.
       - run: uv run python -m evals preflight
