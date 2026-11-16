@@ -12,3 +12,7 @@ updates:
     directory: /
     schedule:
       interval: weekly # base-image digests: this is how security patches arrive
+    ignore:
+      # The project is tested on Python 3.12. Take new builds of that image, not a new Python.
+      - dependency-name: python
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
