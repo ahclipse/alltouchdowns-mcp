@@ -15,7 +15,7 @@ Ask an assistant connected to it things like:
 This is a portfolio project. It is small on purpose, so that every part can be read and explained:
 
 - **A production MCP server in Python**, on the official `mcp` SDK, with typed tool results, a limit on the work a query may do, rate limiting and OAuth.
-- **An eval suite with real ground truth.** An LLM agent is given the server's tools and about 100 questions. Each answer is graded against SQL run on the same database, not against a stored answer key.
+- **An eval suite with real ground truth.** An LLM agent is given the server's tools and about 130 questions. Each answer is graded against SQL run on the same database, not against a stored answer key.
 - **A data pipeline with rules that can be read in one place**: what may be published, what is held back, and what is never copied.
 
 ## Tools
@@ -35,7 +35,7 @@ All tools are read-only. Every tool result and every protocol error carries the 
 
 **Scorers, not passers.** The data credits each touchdown to the player who scored it. On a pass, that is the receiver. So the types are called `receiving` and `rushing`, and every description says that passes thrown are not recorded. A question about a quarterback's touchdown passes is declined, because the data would give a confident wrong number: a quarterback's "receiving" touchdowns are the rare passes he caught.
 
-**Regular season and postseason are always separate.** Every count comes back as three numbers: regular season, postseason and total. Mixing them changes the season leader in 6 of 27 seasons.
+**Regular season and postseason are always separate.** Counts come back split three ways: regular season, postseason and total. A search limited to one of the two reports the other as null, not zero, because it was not counted. Mixing them changes the season leader in 6 of 27 seasons.
 
 **Slugs, not names.** Several players share a name, and the best-known one often does not have the plain slug: the Adrian Peterson with 131 touchdowns is `adrian-peterson-2`. Tools that take a player take a slug, and `find_players` exists to get it.
 
@@ -55,10 +55,11 @@ The eval suite lives in [`evals/`](evals). An agent (a Claude model) gets the se
 
 - **Ground truth is SQL.** Each case is graded against a query, not a stored answer. The query runs at eval time against the same database the server is serving, and may only use columns copied unchanged from the source, so a bug in the server's own derived data cannot hide itself. (A case's notes record the answer for human readers; the grader never reads them.)
 - **Grading is exact and uses no model.** Answers are numbers, yes/no, or lists of identifiers (player slugs, game ids, team abbreviations). Ranked lists accept any order within a tie.
-- **Declining is tested too.** About a quarter of the cases must be answered "not covered": passes thrown, seasons outside the data, statistics that are not touchdowns, requests for a bulk export.
-- **The headline is "correct and grounded"**: the answer is right, and it came from a tool result rather than the model's memory.
+- **Declining is tested too, in both directions.** About a fifth of the cases must be answered "not covered": passes thrown, seasons outside the data, statistics that are not touchdowns, requests for a bulk export. Others are worded like those and have an answer, so declining on a trigger word fails as well.
+- **A harder tier is scored on its own.** In the first full pass the two larger models answered every question, because most needed one obvious call. Now 27 cases need what the tools do not hand over: two results combined, rows tallied by team or by game, a tie that nothing flags, or a number on screen that is wrong for the question. The report gives the score for each tier.
+- **The headline is "correct and grounded"**: the answer is right, and it came from a tool result rather than the model's memory. Where a question picks players by an attribute, such as which scorers are quarterbacks, a tool must have shown that attribute for each player named.
 - **Plumbing failures are not scores, and cannot hide them.** A trial the harness could not complete (an API error, a timeout) is recorded separately, retried on the next run, and never counted as a wrong answer. A run counts as a measurement only if at least 98% of its planned trials were graded. A reply that was cut off or refused is the model's own, so it counts as wrong.
-- **The suite checks itself for free.** On every pull request, a scripted "oracle" agent must score 100% and a "null" agent 0% through the real runner, server and grader, and each case's scripted solution must reproduce its ground truth through the real tools.
+- **The suite checks itself for free.** On every pull request, a scripted "oracle" agent must score 100% and a "null" agent 0% through the real runner, server and grader, and each case's scripted solution must reproduce its ground truth through the real tools. The answer is either read from one field of a result, or worked out from the results by a few lines of Python ([`evals/solutions.py`](evals/solutions.py)).
 - **The pass mark is measured, not chosen.** The gate is set from repeated runs of the current code, below their mean by the larger of twice the run-to-run spread and the noise floor for that many trials.
 
 In CI the suite runs against a committed two-season fixture (2007 and 2019), so every question is about those seasons. That limits what it can show: true career totals are not tested, and paging is tested only up to six pages.

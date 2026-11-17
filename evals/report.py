@@ -127,13 +127,15 @@ def summarise(run_dir: Path) -> dict[str, Any]:
         "cache_write_tokens": sum(row["usage"]["cache_creation_input_tokens"] for row in rows),
         "cost_usd": round(total_cost(rows, errors), 4),
         "failures": _count(row["failure"] for row in rows if row["failure"]),
-        "by_category": {
-            category: {
-                "trials": len(group),
-                "correct_and_grounded": _rate(row["correct"] and row["grounded"] for row in group),
-            }
-            for category, group in sorted(_group(rows, "category").items())
-        },
+        # A right answer that was not grounded misses the headline and has no failure kind,
+        # so without this it is counted nowhere by name. Trials per case.
+        "correct_not_grounded": _count(
+            row["case_id"] for row in rows if row["correct"] and not row["grounded"]
+        ),
+        "by_category": _scores(_group(rows, "category")),
+        # The core cases are near the ceiling for every model; the harder tier is where
+        # models differ. Rows written before tiers existed are all core.
+        "by_tier": _scores(_group([{"tier": "core", **row} for row in rows], "tier")),
         "banned_terms_from_model": sum(row["banned_terms_from_model"] for row in rows),
     }
 
@@ -177,6 +179,9 @@ def markdown(summary: dict[str, Any]) -> str:
         f"| Tool calls per trial | {summary['tool_calls_per_trial']:.1f} |",
         f"| Invalid-argument rate (per tool call) | {_pct(summary['invalid_argument_rate'])} |",
         f"| Calls that repeated an earlier call exactly | {_pct(summary['repeated_call_rate'])} |",
+        f"| Trials over the case's call budget | {_pct(summary['over_call_budget'])} |",
+        f"| Trials answered only when the turn limit cut tools off | "
+        f"{_pct(summary['forced_final_rate'])} |",
         f"| Answers with extra text in a list item (graded on the identifier) | "
         f"{_pct(summary['decorated_answer_rate'])} |",
         f"| Declines given for the right reason | {_pct(summary['decline_reason_match_rate'])} |",
@@ -192,6 +197,13 @@ def markdown(summary: dict[str, Any]) -> str:
         f"({summary['error_attempts']}) |",
         f"| Banned terms written by the model | {summary['banned_terms_from_model']} |",
         "",
+        "| Tier | Trials | Correct and grounded |",
+        "|---|---|---|",
+        *(
+            f"| {name} | {group['trials']} | {_pct(group['correct_and_grounded'])} |"
+            for name, group in summary["by_tier"].items()
+        ),
+        "",
         "| Category | Trials | Correct and grounded |",
         "|---|---|---|",
         *(
@@ -202,6 +214,14 @@ def markdown(summary: dict[str, Any]) -> str:
     if summary["failures"]:
         failures = ", ".join(f"{name} {count}" for name, count in summary["failures"].items())
         lines += ["", f"Failures by kind: {failures}."]
+    # Summaries written before this was counted do not have the key.
+    if ungrounded := summary.get("correct_not_grounded"):
+        trials = sum(ungrounded.values())
+        lines += [
+            "",
+            f"Right but not grounded, so not counted in the headline: {trials} "
+            f"{'trial' if trials == 1 else 'trials'} ({', '.join(ungrounded)}).",
+        ]
     if not summary["valid"]:
         lines += [
             "",
@@ -245,6 +265,17 @@ def _count(items) -> dict[str, int]:
     for item in items:
         counts[item] += 1
     return dict(sorted(counts.items(), key=lambda pair: -pair[1]))
+
+
+def _scores(groups: dict[str, list[dict[str, Any]]]) -> dict[str, dict[str, Any]]:
+    """Trials and headline score for each group of rows, in name order."""
+    return {
+        name: {
+            "trials": len(group),
+            "correct_and_grounded": _rate(row["correct"] and row["grounded"] for row in group),
+        }
+        for name, group in sorted(groups.items())
+    }
 
 
 def _group(rows: Sequence[dict[str, Any]], key: str) -> dict[str, list[dict[str, Any]]]:

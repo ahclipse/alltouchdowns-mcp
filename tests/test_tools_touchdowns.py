@@ -38,8 +38,6 @@ def every_page(db: Database, **filters) -> list[tuple[str, int]]:
         ({"season": 2019, "quarter": 2}, "season = 2019 AND quarter = 2"),
         ({"season": 2019, "quarter": 5}, "season = 2019 AND quarter >= 5"),  # 5 means overtime
         ({"season": 2007, "min_yards": 80}, "season = 2007 AND yards >= 80"),
-        ({"season": 2019, "season_type": "regular"}, "season = 2019 AND postseason = 0"),
-        ({"season": 2019, "season_type": "postseason"}, "season = 2019 AND postseason = 1"),
         ({"player": "randy-moss"}, "player_slug = 'randy-moss'"),
         ({"team": "KC"}, "franchise = 'KC'"),
         ({"team": "San Diego", "td_type": "rushing"}, "franchise = 'LAC' AND td_type = 'rushing'"),
@@ -51,6 +49,20 @@ def test_matched_count_agrees_with_plain_sql(db: Database, filters: dict, where:
     assert result.matched.total == count(where)
     assert result.matched.regular_season == count(f"({where}) AND postseason = 0")
     assert result.matched.postseason == count(f"({where}) AND postseason = 1")
+
+
+def test_the_side_that_season_type_leaves_out_is_null_not_zero(db: Database) -> None:
+    """San Diego scored 49 touchdowns in the 2007 regular season and 6 in the playoffs. A
+    regular-season search used to report "postseason: 0", which reads as "none were scored"."""
+    regular = search_touchdowns(db, team="SD", season=2007, season_type="regular").matched
+    playoffs = search_touchdowns(db, team="SD", season=2007, season_type="postseason").matched
+    both = search_touchdowns(db, team="SD", season=2007).matched
+
+    assert (regular.regular_season, regular.postseason, regular.total) == (49, None, 49)
+    assert (playoffs.regular_season, playoffs.postseason, playoffs.total) == (None, 6, 6)
+    assert (both.regular_season, both.postseason, both.total) == (49, 6, 55)
+    # A real zero is still a zero: Carolina did not score in the 2007 playoffs.
+    assert search_touchdowns(db, team="CAR", season=2007).matched.postseason == 0
 
 
 def test_matched_is_the_whole_count_not_the_page(db: Database) -> None:

@@ -44,8 +44,8 @@ _SLUG = "Player slug, exactly as find_players returned it."
 _TD_TYPE = (
     "Kind of touchdown. 'receiving' is a caught pass, credited to the receiver. "
     "'fumble_return' is any recovered loose ball: a fumble run back, a ball recovered in the "
-    "end zone, and most returns of blocked kicks (the rest are under 'other'). 'other' is "
-    "the few that fit no type."
+    "end zone, and a blocked kick run back or recovered. 'other' is the few that fit no "
+    "type, such as a missed field goal run back."
 )
 _SEASON_TYPE = "Count regular season games, postseason games, or all."
 _CURSOR = "next_cursor from the previous page of the same search."
@@ -183,7 +183,9 @@ def create_server(settings: Settings) -> MCPServer:
         """List individual touchdowns that match the filters.
 
         `matched` is the full count across all pages, split by regular season and postseason,
-        so a "how many" question needs one call and no paging.
+        so a "how many" question needs one call and no paging. With season_type 'regular' or
+        'postseason' the other side is null: it was not counted, which does not mean there
+        were none.
         """
         with database() as db:
             return touchdowns.search_touchdowns(

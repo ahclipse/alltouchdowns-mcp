@@ -58,12 +58,13 @@ class RunConfig:
     effort: str = "medium"
     reps: int = 3
     tools: bool = True  # False runs the no-tools baseline: what can the model answer unaided?
-    only: str | None = None  # category or id prefix
+    only: str | None = None  # category or id prefixes, separated by commas
     split: str | None = None  # "dev" or "heldout"
     limit: int | None = None  # first N cases only
     sample: int | None = None  # N cases spread evenly over the suite, for a pilot
     concurrency: int = 4
     max_turns: int = 10
+    show_thinking: bool = False  # keep summaries of the model's reasoning in the traces
     trial_timeout_s: float = 300.0
     max_cost_usd: float = 5.0
 
@@ -185,6 +186,7 @@ class _RunState:
             "system": self.system,
             "tools": self.tools,
             "max_turns": config.max_turns,
+            "show_thinking": config.show_thinking,
         }
         # Created here and filled in by the agent, so that what a trial spent is still known
         # if it fails or times out half-way.
@@ -206,6 +208,7 @@ class _RunState:
             if isinstance(error, agent.ModelMismatch):
                 self.stopped = "the API answered with a different model than the one asked for"
             self._error(case, rep, _error_class(error), error, self._charge(trial))
+            self._keep_failed_trace(case, rep, trial)
         else:
             self._charge(trial)
             self._record(case, rep, trial)
@@ -236,6 +239,7 @@ class _RunState:
             "case_id": case.id,
             "rep": rep,
             "category": case.category,
+            "tier": case.tier,
             "split": case.split,
             "expect": case.expect,
             "model": trial.model,
@@ -269,6 +273,16 @@ class _RunState:
         }
         _append(self.config.out / "results.jsonl", row)
         _write_json(self.config.out / "traces" / f"{case.id}_rep{rep}.json", trial.transcript)
+
+    def _keep_failed_trace(self, case: Case, rep: int, trial: agent.Trial) -> None:
+        """What a trial did before it failed was paid for, and is often the part worth
+        reading. It goes beside the traces under another name, so that a later run which
+        completes the trial does not have to overwrite it. Never allowed to fail the run."""
+        path = self.config.out / "traces" / f"{case.id}_rep{rep}.failed.json"
+        try:
+            _write_json(path, trial.transcript)
+        except (OSError, TypeError, ValueError):
+            return
 
     def _error(self, case: Case, rep: int, kind: str, error: BaseException, cost: float) -> None:
         row = {"case_id": case.id, "rep": rep, "class": kind, "detail": repr(error)[:300],
@@ -330,9 +344,8 @@ def _select_cases(config: RunConfig, conn) -> list[Case]:
     if not config.tools:
         cases = [c for c in cases if c.expect == "answer"]
     if config.only:
-        cases = [
-            c for c in cases if c.category.startswith(config.only) or c.id.startswith(config.only)
-        ]
+        wanted = tuple(prefix.strip() for prefix in config.only.split(",") if prefix.strip())
+        cases = [c for c in cases if c.category.startswith(wanted) or c.id.startswith(wanted)]
     if config.split:
         cases = [c for c in cases if c.split == config.split]
     if config.sample and config.sample < len(cases):
@@ -386,6 +399,7 @@ def _manifest(
         "tools": config.tools,
         "reps": config.reps,
         "max_turns": config.max_turns,
+        "show_thinking": config.show_thinking,
         "cases": len(cases),
         # If any of these change, earlier results are not comparable and must not be resumed.
         "cases_hash": digest(*(c.model_dump_json().encode() for c in cases)),
@@ -399,8 +413,8 @@ def _manifest(
     }
 
 
-_MUST_MATCH = ("model", "effort", "tools", "reps", "max_turns", "cases_hash", "database_hash",
-               "prompt_hash", "code_hash")  # fmt: skip
+_MUST_MATCH = ("model", "effort", "tools", "reps", "max_turns", "show_thinking", "cases_hash",
+               "database_hash", "prompt_hash", "code_hash")  # fmt: skip
 
 
 def _check_resumable(out: Path, manifest: dict[str, Any]) -> None:

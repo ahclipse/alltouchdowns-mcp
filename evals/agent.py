@@ -104,6 +104,7 @@ async def run_trial(
     system: str,
     tools: list[dict[str, Any]],
     max_turns: int,
+    show_thinking: bool = False,
     trial: Trial | None = None,
 ) -> Trial:
     """Ask one question and let the model call tools until it answers.
@@ -111,6 +112,9 @@ async def run_trial(
     `mcp` is None for the no-tools baseline, where `tools` is empty. Pass a `trial` to fill in
     when the caller needs what was spent even if the trial is cut short: tokens are added to
     it as each model request completes.
+
+    `show_thinking` asks the API for a summary of the model's reasoning and keeps it in the
+    trace, for working out why a model did something. It changes what is returned.
     """
     trial = trial if trial is not None else Trial()
     trial.transcript += [
@@ -140,6 +144,8 @@ async def run_trial(
             },
             "cache_control": {"type": "ephemeral"},
         }
+        if show_thinking:
+            request["thinking"] = {"type": "adaptive", "display": "summarized"}
         if tools:
             request["tools"] = tools
             request["tool_choice"] = {"type": "none" if trial.forced_final else "auto"}
@@ -150,15 +156,12 @@ async def run_trial(
         trial.turns += 1
         trial.stop_reason = response.stop_reason
         messages.append({"role": "assistant", "content": response.content})
-
-        tool_uses = [block for block in response.content if block.type == "tool_use"]
-        for block in response.content:
-            if block.type == "text" and block.text.strip():
-                trial.transcript.append({"role": "assistant", "content": block.text})
+        _keep(response, trial)
 
         if response.stop_reason != "tool_use" or mcp is None or trial.forced_final:
             break
         # Every tool result goes back in ONE user message, as the API expects.
+        tool_uses = [block for block in response.content if block.type == "tool_use"]
         results = [await _call_tool(mcp, block, trial) for block in tool_uses]
         messages.append({"role": "user", "content": results})
 
@@ -169,6 +172,32 @@ async def run_trial(
     else:
         trial.answer = _parse_answer(messages[-1]["content"])
     return trial
+
+
+def _keep(response: Any, trial: Trial) -> None:
+    """Add one model reply to the trace: what kinds of block it held, then what it wrote.
+
+    The `turn` entry has no words of the model's, only the shape of the reply and what the
+    request used, so that a turn which called a tool and wrote nothing still leaves a mark.
+    Reasoning is kept only when the API returned its text, which it does not unless asked;
+    `index` is the block's place in the reply, because an empty block leaves no entry.
+    """
+    trial.transcript.append(
+        {
+            "role": "turn",
+            "turn": trial.turns,
+            "stop_reason": response.stop_reason,
+            "blocks": [block.type for block in response.content],
+            **{key: getattr(response.usage, key, 0) or 0 for key in trial.usage},
+        }
+    )
+    for index, block in enumerate(response.content):
+        if block.type == "thinking" and (getattr(block, "thinking", "") or "").strip():
+            trial.transcript.append(
+                {"role": "thinking", "turn": trial.turns, "index": index, "content": block.thinking}
+            )
+        elif block.type == "text" and block.text.strip():
+            trial.transcript.append({"role": "assistant", "content": block.text})
 
 
 async def _create(api: Any, request: dict[str, Any], trial: Trial) -> Any:
@@ -221,8 +250,15 @@ async def _call_tool(mcp: Client, block: Any, trial: Trial) -> dict[str, Any]:
     trial.tool_calls.append(ToolCall(block.name, dict(block.input), is_error, code, seconds))
     if not is_error:
         trial.tool_results.append(text)
+    # `turn` is the model request the call came from. Calls with the same number were sent
+    # together; a repeat with a later number was sent after the first result had been read.
     trial.transcript += [
-        {"role": "tool_call", "name": block.name, "content": json.dumps(block.input, indent=2)},
+        {
+            "role": "tool_call",
+            "name": block.name,
+            "turn": trial.turns,
+            "content": json.dumps(block.input, indent=2),
+        },
         {"role": "tool_result", "content": text},
     ]
     return {"type": "tool_result", "tool_use_id": block.id, "content": text, "is_error": is_error}

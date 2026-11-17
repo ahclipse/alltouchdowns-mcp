@@ -1,0 +1,115 @@
+# Questions about the games a player scored in, where the tools count touchdowns. `matched`
+# and every total in a summary are touchdown counts, and the search description says that a
+# "how many" question needs one call. Here it needs the rows: two touchdowns in one game are
+# one game. And a touchdown row has no field that says who was at home: that is in the list of
+# games, or has to be read off the row's game id and its away and home scores.
+
+[[case]]
+id = "games-scored-in-01"
+category = "games_scored_in"
+split = "dev"
+tier = "hard"
+question = "In how many different games of the 2007 regular season did New England wide receiver Randy Moss score a touchdown?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = '''
+SELECT COUNT(DISTINCT t.game_id) FROM touchdowns t JOIN players p ON p.slug = t.player_slug
+WHERE p.display_name = 'Randy Moss' AND t.season = 2007 AND t.postseason = 0
+'''
+expected_tools = [["find_players"], ["search_touchdowns"]]
+max_calls = 4
+reference_calls = [
+  { tool = "find_players", args = { query = "Randy Moss" } },
+  { tool = "search_touchdowns", args = { player = "randy-moss", season = 2007, season_type = "regular", limit = 50 } },
+]
+notes = "The count the tool reports is the famous one and the wrong one: matched.regular_season is 23, his touchdowns. The games have to be counted from the rows, and the default page of 25 would hold them all, but only just. Truth re-derived 2026-11-16: 13 games (he scored twice or more in 8 of them). The count of different games is in evals/solutions.py."
+
+[[case]]
+id = "games-scored-in-02"
+category = "games_scored_in"
+split = "heldout"
+tier = "hard"
+question = "In how many different games of the 2019 season, playoffs included, did Green Bay running back Aaron Jones score a touchdown?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = '''
+SELECT COUNT(DISTINCT t.game_id) FROM touchdowns t JOIN players p ON p.slug = t.player_slug
+WHERE p.display_name = 'Aaron Jones' AND p.position = 'RB' AND t.team_abbr = 'GB'
+  AND t.season = 2019
+'''
+expected_tools = [["find_players"], ["search_touchdowns"]]
+max_calls = 4
+reference_calls = [
+  { tool = "find_players", args = { query = "Aaron Jones" } },
+  { tool = "search_touchdowns", args = { player = "aaron-jones-2", season = 2019, limit = 50 } },
+]
+notes = "Held out: the same count of games, with a numbered slug and the playoffs included. His 23 touchdowns (19 regular season, 4 playoffs) came in 12 games: 10 in the regular season and both of Green Bay's playoff games. A regular-season search gives 10. Truth re-derived 2026-11-16: 12."
+
+[[case]]
+id = "games-scored-in-03"
+category = "games_scored_in"
+split = "dev"
+question = "In which regular-season games of the 2007 and 2019 seasons did running back Marshawn Lynch score a touchdown? Leave out playoff games."
+expect = "answer"
+answer_kind = "set"
+item_type = "game_id"
+truth_sql = '''
+SELECT DISTINCT t.game_id FROM touchdowns t JOIN players p ON p.slug = t.player_slug
+WHERE p.display_name = 'Marshawn Lynch' AND t.season IN (2007, 2019) AND t.postseason = 0
+'''
+expected_tools = [["find_players"], ["search_touchdowns"]]
+max_calls = 5
+reference_calls = [
+  { tool = "find_players", args = { query = "Marshawn Lynch" } },
+  { tool = "search_touchdowns", args = { player = "marshawn-lynch", season = 2007, season_type = "regular" } },
+  { tool = "search_touchdowns", args = { player = "marshawn-lynch", season = 2019, season_type = "regular" } },
+]
+notes = "The one player who scored in both fixture seasons and also in the playoffs, so 'regular season' decides the answer: a search without season_type returns ten games, the extra two being 2019-18-SEA-PHI and 2019-19-SEA-GB. He played for a different team in each season. Truth re-derived 2026-11-16: eight games, seven for Buffalo in 2007 (weeks 1, 3, 4, 7, 9, 10, 16) and 2019-17-SF-SEA. The two searches are put together in evals/solutions.py. Not in the harder tier: on the two-season fixture one search with no season returns the eight rows, each in a different game, so nothing has to be combined or counted. On the full data the same search returns every season and has to be narrowed."
+
+[[case]]
+id = "games-scored-in-04"
+category = "games_scored_in"
+split = "heldout"
+tier = "hard"
+question = "Which player scored a touchdown in the most different playoff games of the 2007 season, the championship game included? If players are tied for the most, name each of them."
+expect = "answer"
+answer_kind = "set"
+item_type = "player_slug"
+truth_sql = '''
+WITH games_scored AS (
+  SELECT player_slug, COUNT(DISTINCT game_id) AS n FROM touchdowns
+  WHERE season = 2007 AND postseason = 1 AND player_slug IS NOT NULL
+  GROUP BY player_slug
+)
+SELECT player_slug FROM games_scored WHERE n = (SELECT MAX(n) FROM games_scored)
+'''
+expected_tools = [["search_touchdowns", "get_game"]]
+max_calls = 6
+reference_calls = [
+  { tool = "search_touchdowns", args = { season = 2007, season_type = "postseason", limit = 50 } },
+  { tool = "search_touchdowns", args = { season = 2007, season_type = "postseason", limit = 50, cursor = "$next_cursor" } },
+]
+notes = "Held out. The playoff leaderboard ranks by touchdowns and gives a different answer: brandon-jacobs leads it alone with 4, and laurence-maroney is level on 3 with ryan-grant, who scored all of his in one game, and amani-toomer, who scored his in two. Ranked by games, Jacobs and Maroney are tied. The scripted route tallies the 58 playoff touchdowns, two pages of a search, by player and game. A shorter one is sound: nobody scores in three games with fewer than three touchdowns, so the leaderboard leaves four players to search. Truth re-derived 2026-11-16: brandon-jacobs and laurence-maroney, three games each; nobody else has more than two. The tally is in evals/solutions.py."
+
+[[case]]
+id = "games-scored-in-05"
+category = "games_scored_in"
+split = "dev"
+tier = "hard"
+question = "Counting the regular season and the playoffs, how many of wide receiver Amani Toomer's touchdowns in the 2007 season were scored in away games, where his team was the visitor?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = '''
+SELECT COUNT(*) FROM touchdowns t
+JOIN players p ON p.slug = t.player_slug
+JOIN games g ON g.game_id = t.game_id
+WHERE p.display_name = 'Amani Toomer' AND t.season = 2007 AND t.team_abbr = g.away_abbr
+'''
+expected_tools = [["find_players"], ["search_touchdowns"]]
+max_calls = 6
+reference_calls = [
+  { tool = "find_players", args = { query = "Amani Toomer" } },
+  { tool = "search_touchdowns", args = { player = "amani-toomer", season = 2007 } },
+  { tool = "list_games", args = { season = 2007, team = "NYG" } },
+]
+notes = "A touchdown row names the scoring team and the opponent and has no field for which was at home. The scripted route joins his six rows to the team's list of games. In the second full pass no model did that: each read it off the rows, where the game id names the visitor first and the score after each touchdown is labelled away and home. The tools do not state that order, but it holds for every game, and an agent that reads it that way is right. Truth re-derived 2026-11-16: 5 of his 6. Two of his three regular-season touchdowns were away, and all three of his playoff touchdowns, so leaving the playoffs out gives 2. He did not score in the Championship, so its neutral site does not matter. The join is in evals/solutions.py."

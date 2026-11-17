@@ -10,15 +10,16 @@ from types import SimpleNamespace
 from typing import Any
 
 import anthropic
+import anyio
 import httpx2
 import pytest
 from anthropic.lib.credentials import WorkloadIdentityError
 from mcp.types import TextContent
 
-from evals import agent, preflight, report, runner, scripted
+from evals import agent, preflight, report, runner, scripted, solutions
 from evals import truth as truths
 from evals.__main__ import main as evals_main
-from evals.schema import CASES_DIR, load_cases
+from evals.schema import CASES_DIR, ReferenceCall, load_cases
 from tests.conftest import FIXTURE_DB
 
 
@@ -166,6 +167,12 @@ def test_a_run_writes_rows_traces_and_a_summary(tmp_path: Path) -> None:
     summary = json.loads((tmp_path / "summary.json").read_text())
     assert summary["valid"] and summary["correct_and_grounded"] == 1.0
     assert "Correct and grounded: 100.0%" in (tmp_path / "summary.md").read_text()
+    # The harder tier is scored on its own as well as inside the headline.
+    hard = sum(case.tier == "hard" for case in cases)
+    assert 0 < hard < len(cases)
+    assert summary["by_tier"]["hard"] == {"trials": 2 * hard, "correct_and_grounded": 1.0}
+    assert summary["by_tier"]["core"]["trials"] == 2 * (len(cases) - hard)
+    assert f"| hard | {2 * hard} | 100.0% |" in (tmp_path / "summary.md").read_text()
     manifest = json.loads((tmp_path / "manifest.json").read_text())
     assert manifest["model"] == scripted.ORACLE and manifest["cases"] == len(cases)
 
@@ -195,12 +202,21 @@ def test_a_trace_shows_the_whole_conversation(tmp_path: Path) -> None:
     assert [turn["role"] for turn in trace] == [
         "system",
         "user",
+        "turn",
         "tool_call",
         "tool_result",
+        "turn",
         "assistant",
     ]
-    assert trace[2]["name"] == "get_leaderboard"
-    assert "antrel-rolle" in trace[3]["content"]
+    # A `turn` entry is the shape of one model reply and holds none of its words.
+    assert trace[2] == {
+        "role": "turn", "turn": 1, "stop_reason": "tool_use", "blocks": ["tool_use"],
+        "input_tokens": 0, "output_tokens": 0,
+        "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0,
+    }  # fmt: skip
+    assert trace[3]["name"] == "get_leaderboard" and trace[3]["turn"] == 1
+    assert "antrel-rolle" in trace[4]["content"]
+    assert trace[5]["blocks"] == ["text"] and trace[5]["turn"] == 2
 
 
 def test_a_finished_run_resumes_without_repeating_trials(
@@ -313,6 +329,20 @@ def test_cost_cap_stops_the_run_before_it_is_exceeded(tmp_path: Path, monkeypatc
     assert "cost cap" in json.loads((tmp_path / "manifest.json").read_text())["stopped"]
 
 
+def test_what_a_failed_trial_did_is_kept_beside_the_traces(tmp_path: Path, monkeypatch) -> None:
+    async def half_done(api: Any, mcp: Any, *, trial: agent.Trial, **settings: Any):
+        trial.transcript.append({"role": "user", "content": "asked"})
+        raise anthropic.APIConnectionError(request=httpx2.Request("POST", "https://example.test"))
+
+    monkeypatch.setattr(agent, "run_trial", half_done)
+
+    runner.run(config(tmp_path, only="leaderboard-ties-01"))
+
+    kept = tmp_path / "traces" / "leaderboard-ties-01_rep0.failed.json"
+    assert json.loads(kept.read_text()) == [{"role": "user", "content": "asked"}]
+    assert not (tmp_path / "traces" / "leaderboard-ties-01_rep0.json").exists()
+
+
 def test_what_a_failed_trial_spent_counts_towards_the_cap_and_the_total(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -402,6 +432,106 @@ def tool_use(call_id: str, name: str) -> _Block:
     return _Block("tool_use", id=call_id, name=name, input={"season": 2007})
 
 
+@pytest.mark.anyio
+async def test_every_request_holds_the_model_to_the_schema_and_leaves_thinking_alone() -> None:
+    api = _Api(
+        _Reply("tool_use", tool_use("a", "get_leaderboard")),
+        _Reply("end_turn", _Block("text", text=FINAL)),
+    )
+
+    result = await trial(api, _Mcp(), tools=TOOLS)
+
+    assert all("format" in request["output_config"] for request in api.requests)
+    assert all("thinking" not in request for request in api.requests)
+    assert result.answer is not None and result.answer.number == 3
+
+
+@pytest.mark.anyio
+async def test_shown_thinking_is_kept_in_the_trace_and_changes_nothing_else() -> None:
+    def replies() -> list[_Reply]:
+        return [
+            _Reply(
+                "tool_use",
+                _Block("thinking", thinking="The leaderboard has it."),
+                _Block("thinking", thinking=""),
+                tool_use("a", "get_leaderboard"),
+            ),
+            _Reply("end_turn", _Block("text", text=FINAL)),
+        ]
+
+    hidden_api, shown_api = _Api(*replies()), _Api(*replies())
+    hidden = await trial(hidden_api, _Mcp(), tools=TOOLS)
+    shown = await trial(shown_api, _Mcp(), tools=TOOLS, show_thinking=True)
+
+    assert all("thinking" not in request for request in hidden_api.requests)
+    assert all(
+        request["thinking"] == {"type": "adaptive", "display": "summarized"}
+        for request in shown_api.requests
+    )
+    for request in shown_api.requests:
+        request.pop("thinking")
+    assert [
+        {key: value for key, value in request.items() if key != "messages"}
+        for request in shown_api.requests
+    ] == [
+        {key: value for key, value in request.items() if key != "messages"}
+        for request in hidden_api.requests
+    ]
+    assert [(e["role"], e.get("turn")) for e in shown.transcript][2:5] == [
+        ("turn", 1),
+        ("thinking", 1),  # the empty block leaves nothing behind
+        ("tool_call", 1),
+    ]
+    assert shown.transcript[2]["blocks"] == ["thinking", "thinking", "tool_use"]
+    assert shown.answer == hidden.answer
+
+
+def test_show_thinking_reaches_the_agent_and_is_part_of_what_a_run_is(tmp_path: Path) -> None:
+    out = tmp_path / "run"
+    assert evals_main(["run", "--model", scripted.ORACLE, "--out", str(out), "--reps", "1",
+                       "--only", "leaderboard-ties-01", "--show-thinking"]) == 0  # fmt: skip
+
+    assert json.loads((out / "manifest.json").read_text())["show_thinking"] is True
+    (row,) = report.read_jsonl(out / "results.jsonl")
+    assert row["correct"]
+    # A directory made one way is not continued the other way.
+    with pytest.raises(SystemExit, match="show_thinking"):
+        runner.run(config(out, only="leaderboard-ties-01", reps=1))
+
+
+def test_only_takes_several_prefixes(tmp_path: Path) -> None:
+    conn = truths.open_database(FIXTURE_DB)
+    try:
+        chosen = runner._select_cases(  # pyright: ignore[reportPrivateUsage]
+            config(tmp_path, only="leaderboard-ties-01, namesakes"), conn
+        )
+    finally:
+        conn.close()
+
+    ids = [case.id for case in chosen]
+    assert "leaderboard-ties-01" in ids and "leaderboard-ties-02" not in ids
+    assert {case.category for case in chosen} == {"leaderboard_ties", "namesakes"}
+
+
+def test_a_right_answer_that_was_not_grounded_is_counted_by_name(tmp_path: Path) -> None:
+    """It misses the headline with no failure kind, so the report has to say where it went."""
+    results = [
+        graded("a"),
+        {**graded("b"), "grounded": False},
+        {**graded("b"), "rep": 1, "grounded": False},
+        graded("c", correct=False),
+    ]
+
+    summary = summary_of(tmp_path, results, [], planned=4)
+
+    assert summary["correct"] == 0.75 and summary["correct_and_grounded"] == 0.25
+    assert summary["correct_not_grounded"] == {"b": 2}
+    assert summary["failures"] == {"no_answer": 1}
+    text = report.markdown(summary)
+    assert "Right but not grounded, so not counted in the headline: 2 trials (b)." in text
+    assert "Right but not grounded" not in report.markdown({**summary, "correct_not_grounded": {}})
+
+
 async def trial(api: _Api, mcp: _Mcp | None = None, **overrides: Any) -> agent.Trial:
     settings = {"model": "m", "effort": "medium", "question": "?", "system": "s", "tools": [],
                 "max_turns": 2}  # fmt: skip
@@ -431,6 +561,9 @@ async def test_tool_calls_made_together_are_answered_in_one_message() -> None:
         ("b", "result of list_games"),
     ]
     assert result.tool_results == ["result of get_leaderboard", "result of list_games"]
+    # The trace says which request each call came from, so an audit can tell calls sent
+    # together from a call sent again after its result had been read.
+    assert [entry["turn"] for entry in result.transcript if entry["role"] == "tool_call"] == [1, 1]
     assert result.answer is not None and not result.forced_final
 
 
@@ -613,10 +746,13 @@ def test_baseline_sets_the_gate_below_the_mean_by_the_noise() -> None:
             report.make_baseline([run_scoring(0.9), {**run_scoring(0.9), **change}])
 
 
-def graded(case_id: str, *, correct: bool = True, status: str = "ok") -> dict[str, Any]:
+def graded(
+    case_id: str, *, correct: bool = True, status: str = "ok", tier: str = "core"
+) -> dict[str, Any]:
     """One row of results.jsonl, as the runner writes it."""
     return {
-        "case_id": case_id, "rep": 0, "category": "c", "split": "dev", "expect": "answer",
+        "case_id": case_id, "rep": 0, "category": "c", "tier": tier, "split": "dev",
+        "expect": "answer",
         "model": scripted.ORACLE, "status": status, "stop_reason": "end_turn", "answer": None,
         "answer_kind_given": "number" if status == "ok" else None,
         "correct": correct, "failure": None if correct else "no_answer", "grounded": correct,
@@ -699,14 +835,92 @@ def test_reference_path() -> None:
         preflight.resolve_path(result, "rows[*].team")
 
 
+def test_every_case_that_expects_an_answer_proves_it_one_way() -> None:
+    """A field of a result, or a worked solution: never neither, never both."""
+    cases = {case.id: case for case in load_cases()}
+    answerable = {case.id for case in cases.values() if case.expect == "answer"}
+
+    assert set(solutions.SOLUTIONS) <= answerable
+    for case in cases.values():
+        assert preflight._proof_problems(case) == [], case.id
+    solved = cases["allowed-and-absent-01"]
+    unproven = solved.model_copy(update={"id": "no-solution-01"})
+    assert "needs a reference_path" in preflight._proof_problems(unproven)[0]
+    doubled = solved.model_copy(update={"reference_path": "matched.total"})
+    assert "has both" in preflight._proof_problems(doubled)[0]
+
+
+def test_a_worked_solution_is_graded_against_the_truth() -> None:
+    """Cleveland's opponents: the touchdowns in its games, less its own."""
+    (case,) = [c for c in load_cases() if c.id == "allowed-and-absent-01"]
+    results = [
+        {"games": [{"touchdown_count": 5}, {"touchdown_count": 4}]},
+        {"matched": {"regular_season": 3, "postseason": None, "total": 3}},
+    ]
+
+    assert preflight._solve(case, 6, results, {}) is None
+    wrong = preflight._solve(case, 7, results, {}) or ""
+    assert "the tools returned 6 but the truth is 7" in wrong
+    # A solution that cannot read its results is a finding about the case, not a crash.
+    assert "failed on the tool results" in (preflight._solve(case, 6, results[:1], {}) or "")
+
+
+def test_a_value_of_the_wrong_kind_is_reported_not_graded() -> None:
+    """Above all a null. The side of a count that a filter left out is null, and read as
+    "no" it would pass a yes/no case whose truth is no without having shown anything."""
+    cases = {case.id: case for case in load_cases()}
+    yes_no, number = cases["zero-and-empty-06"], cases["allowed-and-absent-01"]
+    players, ranked = cases["game-detail-07"], cases["tally-across-rows-01"]
+
+    assert "not a yes/no" in (preflight._judge(yes_no, False, None, {}) or "")
+    assert preflight._judge(yes_no, False, 0, {}) is None  # a count of none is a real "no"
+    assert "not a whole number" in (preflight._judge(number, 6, None, {}) or "")
+    assert "not a whole number" in (preflight._judge(number, 6, ["a", "b"], {}) or "")
+    assert "not a whole number" in (preflight._judge(number, 1, True, {}) or "")
+    assert "not a list" in (preflight._judge(players, frozenset({"a"}), "a", {}) or "")
+    assert "not a list" in (preflight._judge(players, frozenset({"a"}), ["a", None], {}) or "")
+    assert preflight._judge(players, frozenset({"a", "b"}), {"b", "a"}, {}) is None
+    # A ranking has an order, which a set does not.
+    assert "not a list" in (preflight._judge(ranked, [frozenset({"a"})], {"a"}, {}) or "")
+    assert preflight._judge(ranked, [frozenset({"a"})], ["a"], {}) is None
+
+
+def test_reference_calls_must_show_the_attribute_the_answer_was_picked_by() -> None:
+    """The Miami quarterbacks, with a search in place of the leaderboard: the scorers are
+    all there, but nothing says which of them is a quarterback."""
+    conn = truths.open_database(FIXTURE_DB)
+    try:
+        (case,) = [c for c in load_cases() if c.id == "quarterback-scoring-04"]
+        search = {"team": "Miami", "season": 2007, "td_type": "rushing", "season_type": "regular"}
+        by_search = case.model_copy(
+            update={"reference_calls": [ReferenceCall(tool="search_touchdowns", args=search)]}
+        )
+        franchises = truths.franchises(conn)
+        problems = anyio.run(preflight.reference, [by_search], FIXTURE_DB, conn, franchises)
+        as_written = anyio.run(preflight.reference, [case], FIXTURE_DB, conn, franchises)
+    finally:
+        conn.close()
+
+    assert any("do not show 'position'" in problem for problem in problems)
+    assert as_written == []
+
+
+def test_rows_written_before_tiers_existed_count_as_core(tmp_path: Path) -> None:
+    old_row = {key: value for key, value in graded("a").items() if key != "tier"}
+
+    summary = summary_of(tmp_path, [old_row, graded("b", tier="hard")], [], planned=2)
+
+    assert {tier: group["trials"] for tier, group in summary["by_tier"].items()} == {
+        "core": 1,
+        "hard": 1,
+    }
+
+
 def test_reference_check_catches_a_tool_that_disagrees_with_the_truth() -> None:
     conn = truths.open_database(FIXTURE_DB)
     try:
         (case,) = [c for c in load_cases() if c.id == "leaderboard-ties-01"]
         wrong = case.model_copy(update={"truth_sql": "SELECT 'randy-moss', 1"})
-        problems = evals_main  # keep the import used; the check below is the point
-        import anyio
-
         problems = anyio.run(
             preflight.reference, [wrong], FIXTURE_DB, conn, truths.franchises(conn)
         )

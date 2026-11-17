@@ -1,0 +1,143 @@
+# Answers that have to be worked out from rows, because no tool ranks or adds them up that
+# way. The leaderboard ranks players, never teams, by one touchdown type or by all of them
+# together, never by two. A search ordered by length does not keep ties the way the
+# leaderboard does, and has a lower bound on yards but no upper one. So these need rows
+# tallied, two results added, or one count taken from another, and the tie at the end
+# noticed without being pointed out.
+
+[[case]]
+id = "tally-across-rows-01"
+category = "tally_across_rows"
+split = "dev"
+tier = "hard"
+question = "Which players scored the four longest touchdowns of the 2007 regular season? List them longest first, and include everyone tied for fourth place."
+expect = "answer"
+answer_kind = "ordered_list"
+item_type = "player_slug"
+truth_sql = '''
+SELECT player_slug, yards FROM touchdowns
+WHERE season = 2007 AND postseason = 0 AND player_slug IS NOT NULL AND yards >= (
+  SELECT yards FROM touchdowns WHERE season = 2007 AND postseason = 0
+  ORDER BY yards DESC LIMIT 1 OFFSET 3
+)
+ORDER BY yards DESC, player_slug
+'''
+expected_tools = [["search_touchdowns"]]
+max_calls = 3
+reference_calls = [{ tool = "search_touchdowns", args = { season = 2007, season_type = "regular", order = "longest", limit = 8 } }]
+notes = "A tie on the cut that the tool does not keep. A search ordered by length with limit 4 returns four rows and stops, with a second 103-yard return left on the next page; the leaderboard would have added the tied row, the search does not. The agent has to ask for more than four and compare the yards. Truth re-derived 2026-11-16: antonio-cromartie (109), ellis-hobbs (108), andre-davis-2 (104), then terrence-mcgee and aundrae-allison on 103; the next is 100. The cut is worked out in evals/solutions.py."
+
+[[case]]
+id = "tally-across-rows-02"
+category = "tally_across_rows"
+split = "dev"
+tier = "hard"
+question = "Which team returned the most interceptions for touchdowns in the 2007 regular season? If teams are tied for the most, name each of them."
+expect = "answer"
+answer_kind = "set"
+item_type = "team_abbr"
+truth_sql = '''
+WITH counts AS (
+  SELECT team_abbr, COUNT(*) AS n FROM touchdowns
+  WHERE season = 2007 AND postseason = 0 AND td_type = 'int_return'
+  GROUP BY team_abbr
+)
+SELECT team_abbr FROM counts WHERE n = (SELECT MAX(n) FROM counts)
+'''
+expected_tools = [["search_touchdowns"]]
+max_calls = 5
+reference_calls = [
+  { tool = "search_touchdowns", args = { season = 2007, td_type = "int_return", season_type = "regular", limit = 50 } },
+  { tool = "search_touchdowns", args = { season = 2007, td_type = "int_return", season_type = "regular", limit = 50, cursor = "$next_cursor" } },
+]
+notes = "There is no leaderboard of teams, and the player leaderboard shows no team, so the 52 rows have to be paged (two pages at the largest size, three at the default) and tallied by team. Nothing flags the tie. Truth re-derived 2026-11-16: Minnesota and Arizona, 6 each; the next teams have 3. The tally is in evals/solutions.py."
+
+[[case]]
+id = "tally-across-rows-03"
+category = "tally_across_rows"
+split = "heldout"
+tier = "hard"
+question = "Counting punt returns and kickoff returns together, which players returned the most kicks for touchdowns in the 2007 regular season? Give the top two places, best first, and include every player tied for second."
+expect = "answer"
+answer_kind = "ordered_list"
+item_type = "player_slug"
+truth_sql = '''
+WITH counts AS (
+  SELECT player_slug, COUNT(*) AS n FROM touchdowns
+  WHERE season = 2007 AND postseason = 0 AND td_type IN ('punt_return', 'kickoff_return')
+    AND player_slug IS NOT NULL
+  GROUP BY player_slug
+)
+SELECT player_slug, n FROM counts
+WHERE n >= (SELECT DISTINCT n FROM counts ORDER BY n DESC LIMIT 1 OFFSET 1)
+ORDER BY n DESC, player_slug
+'''
+expected_tools = [["get_leaderboard", "search_touchdowns"]]
+max_calls = 4
+reference_calls = [
+  { tool = "get_leaderboard", args = { season = 2007, td_type = "punt_return", limit = 50 } },
+  { tool = "get_leaderboard", args = { season = 2007, td_type = "kickoff_return", limit = 50 } },
+]
+notes = "Held out. A ranking across two types, which the leaderboard cannot make: it filters by one type or none. Each type's leaderboard has to be read to the bottom and added up per player, because josh-cribbs is second only when his one punt return is added to his two kickoff returns; on the kickoff leaderboard alone he is third. Truth re-derived 2026-11-16: devin-hester 6 (4 punts, 2 kickoffs), then andre-davis-2, josh-cribbs and leon-washington on 3 each; three players follow on 2. The sum is in evals/solutions.py."
+
+[[case]]
+id = "tally-across-rows-04"
+category = "tally_across_rows"
+split = "dev"
+tier = "hard"
+question = "In which game was the longest punt return for a touchdown of the 2007 regular season scored? If more than one return shares the longest distance, name each game."
+expect = "answer"
+answer_kind = "set"
+item_type = "game_id"
+truth_sql = '''
+SELECT DISTINCT game_id FROM touchdowns
+WHERE season = 2007 AND postseason = 0 AND td_type = 'punt_return' AND yards = (
+  SELECT MAX(yards) FROM touchdowns
+  WHERE season = 2007 AND postseason = 0 AND td_type = 'punt_return'
+)
+'''
+expected_tools = [["search_touchdowns"]]
+max_calls = 3
+reference_calls = [{ tool = "search_touchdowns", args = { season = 2007, td_type = "punt_return", season_type = "regular", order = "longest", limit = 5 } }]
+notes = "The 2007 twin of return-types-03, where the longest is unique. Here two returns share the longest distance, and a search with limit 1 shows the earlier one with no sign of the other, because equal yards are ordered by kick-off time. Truth re-derived 2026-11-16: 2007-09-SEA-CLE (nate-burleson) and 2007-11-CAR-GB (tramon-williams), 94 yards each; the next is 90. The comparison is in evals/solutions.py."
+
+[[case]]
+id = "tally-across-rows-05"
+category = "tally_across_rows"
+split = "dev"
+tier = "hard"
+question = "How many touchdowns of exactly 1 yard were scored in the 2019 regular season?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = "SELECT COUNT(*) FROM touchdowns WHERE season = 2019 AND postseason = 0 AND yards = 1"
+expected_tools = [["search_touchdowns"]]
+max_calls = 4
+reference_calls = [
+  { tool = "search_touchdowns", args = { season = 2019, season_type = "regular", min_yards = 1, limit = 1 } },
+  { tool = "search_touchdowns", args = { season = 2019, season_type = "regular", min_yards = 2, limit = 1 } },
+]
+notes = "The search has a lower bound on yards and no upper one, so 'exactly 1' is one count taken from another: 1,327 of at least 1 yard less 1,127 of at least 2. The shortcut of taking the second count from the season's total gives 205, because five touchdowns have a length of 0 (loose balls recovered in the end zone). Paging through the season to count them is the other way to fail. Truth re-derived 2026-11-16: 200 (151 runs, 49 catches). The subtraction is in evals/solutions.py."
+
+[[case]]
+id = "tally-across-rows-06"
+category = "tally_across_rows"
+split = "dev"
+tier = "hard"
+question = "New England met one New York team in the last week of the 2007 regular season and again in the Championship. Which players, from either team, scored a touchdown in both of those games?"
+expect = "answer"
+answer_kind = "set"
+item_type = "player_slug"
+truth_sql = '''
+SELECT t.player_slug FROM touchdowns t JOIN games g ON g.game_id = t.game_id
+WHERE g.season = 2007 AND g.week IN (17, 21) AND 'NE' IN (g.away_abbr, g.home_abbr)
+  AND t.player_slug IS NOT NULL
+GROUP BY t.player_slug HAVING COUNT(DISTINCT t.game_id) = 2
+'''
+expected_tools = [["list_games", "get_game", "search_touchdowns"]]
+max_calls = 5
+reference_calls = [
+  { tool = "list_games", args = { season = 2007, team = "New England" } },
+  { tool = "get_game", args = { game_id = "2007-17-NE-NYG" } },
+  { tool = "get_game", args = { game_id = "2007-21-NYG-NE" } },
+]
+notes = "Three steps and no single result: find the two games (New England played each New York team twice in 2007, so the question pins the pair down by week and by the Championship), read both, and keep the scorers who appear in each. Seven players scored across the two games. Truth re-derived 2026-11-16: laurence-maroney, plaxico-burress and randy-moss. Week 21 is the Championship of 2007 (truth.CHAMPIONSHIP_WEEK). The intersection is in evals/solutions.py."

@@ -8,13 +8,13 @@ An eval that is broken still prints a confident number. These checks catch the u
     null       no answer, a wrong answer and "not covered" score what they should
     reference  each case's scripted tool calls really do produce its true answer, which proves
                the question can be answered through the tools (and checks the tools against
-               independent SQL at the same time)
+               independent SQL at the same time). The answer is either one field of the last
+               result, or what a worked solution computes from all of the results
 """
 
 from __future__ import annotations
 
 import json
-import re
 import sqlite3
 from collections import Counter
 from collections.abc import Mapping, Sequence
@@ -29,6 +29,7 @@ from alltouchdowns_mcp.server import create_server
 from evals import grade as grading
 from evals import truth as truths
 from evals.schema import Case, FinalAnswer
+from evals.solutions import SOLUTIONS
 
 TOOLS = (
     "find_players",
@@ -55,6 +56,7 @@ def validate(cases: Sequence[Case], conn: sqlite3.Connection) -> list[str]:
             for call in case.reference_calls
             if call.tool not in TOOLS
         ]
+        problems += [f"{where} {p}" for p in _proof_problems(case)]
         for name in ("truth_sql", "trap_sql"):
             sql = getattr(case, name)
             if sql:
@@ -75,6 +77,20 @@ def validate(cases: Sequence[Case], conn: sqlite3.Connection) -> list[str]:
     questions = Counter(case.question.strip().lower() for case in cases)
     problems += [f"duplicate question: {q!r}" for q, n in questions.items() if n > 1]
     return problems
+
+
+def _proof_problems(case: Case) -> list[str]:
+    """A case that expects an answer proves it can be answered in exactly one of two ways:
+    the answer is a field of the last result (`reference_path`), or a worked solution
+    computes it from the results (evals/solutions.py)."""
+    if case.expect != "answer":
+        return []
+    proofs = (case.reference_path is not None) + (case.id in SOLUTIONS)
+    if proofs == 0:
+        return ["needs a reference_path or a worked solution in evals/solutions.py"]
+    if proofs == 2:
+        return ["has both a reference_path and a worked solution"]
+    return []
 
 
 def _one_team_twice(case: Case, truth: truths.Truth, franchises: Mapping[str, str]) -> list[str]:
@@ -195,6 +211,7 @@ async def reference(
             truth = truths.compute(conn, case)
             problems += _leaked(case, truth, shown_up_front)
             structured: dict[str, Any] = {}
+            results: list[dict[str, Any]] = []
             texts: list[str] = []
             failed = False
             for call in case.reference_calls:
@@ -205,14 +222,24 @@ async def reference(
                     failed = True
                     break
                 structured = result.structured_content or {}
+                results.append(structured)
                 texts.append(text)
             if failed:
                 continue
             if len(case.reference_calls) > case.max_calls:
                 problems.append(f"{case.id}: the reference solution exceeds max_calls")
-            problem = _compare_reference(case, truth, structured, texts, franchises)
+            if case.id in SOLUTIONS:
+                problem = _solve(case, truth, results, franchises)
+            else:
+                problem = _read_path(case, truth, structured, franchises)
             if problem:
                 problems.append(f"{case.id}: {problem}")
+            right = oracle_answer(case, truth)
+            if case.evidence_field and not grading.grounded(case, right, texts, franchises):
+                problems.append(
+                    f"{case.id}: the reference calls do not show '{case.evidence_field}' "
+                    "beside every player in the answer"
+                )
     return problems
 
 
@@ -230,39 +257,61 @@ def _leaked(case: Case, truth: truths.Truth, shown_up_front: str) -> list[str]:
     ]
 
 
-def _compare_reference(
-    case: Case,
-    truth: truths.Truth,
-    structured: dict[str, Any],
-    texts: Sequence[str],
-    franchises: Mapping[str, str],
+def _read_path(
+    case: Case, truth: truths.Truth, last_result: Mapping[str, Any], franchises: Mapping[str, str]
 ) -> str | None:
+    """The answer is one field of the last call's result: read it there and grade it."""
     if case.reference_path is None:
-        # No single field holds the answer (it takes combining calls). Settle for checking
-        # that the pieces of the answer all appear in what the tools returned.
-        haystack = "\n".join(texts)
-        if isinstance(truth, bool):
-            return None
-        if isinstance(truth, int):
-            found = re.search(rf"(?<![\w.]){truth}(?![\w.])", haystack)
-            return None if found else f"the true answer {truth} appears in no tool result"
-        items = truth if isinstance(truth, frozenset) else set().union(*truth)
-        missing = sorted(item for item in items if item.lower() not in haystack.lower())
-        return f"not in any tool result: {missing}" if missing else None
-
+        return "has neither a reference_path nor a worked solution"
     try:
-        value = resolve_path(structured, case.reference_path)
+        value = resolve_path(last_result, case.reference_path)
     except (KeyError, TypeError, IndexError) as error:
         return f"reference_path '{case.reference_path}' does not resolve: {error!r}"
+    return _judge(case, truth, value, franchises)
 
+
+def _solve(
+    case: Case,
+    truth: truths.Truth,
+    results: Sequence[Mapping[str, Any]],
+    franchises: Mapping[str, str],
+) -> str | None:
+    """No one field holds the answer: work it out from every result, and grade it."""
+    try:
+        value = SOLUTIONS[case.id](results)
+    except Exception as error:
+        # A solution is a few lines over nested results. Whatever goes wrong inside one is a
+        # finding about that case, to be listed beside the others, not a crash of the check.
+        return f"the worked solution failed on the tool results: {error!r}"
+    return _judge(case, truth, value, franchises)
+
+
+def _judge(
+    case: Case, truth: truths.Truth, value: Any, franchises: Mapping[str, str]
+) -> str | None:
+    """Grade a value taken from the tool results exactly as an agent's answer would be.
+
+    The value must first be the right kind of thing. A null, such as the side of a count
+    that a filter left out, is never an answer: read as "no" it would pass a yes/no case
+    whose truth is no without proving anything.
+    """
     blank: dict[str, Any] = {"number": None, "items": [], "boolean": None,
                              "not_covered_reason": None, "note": ""}  # fmt: skip
     if case.answer_kind == "number":
+        if isinstance(value, bool) or not isinstance(value, int):
+            return f"the tools gave {value!r}, which is not a whole number"
         answer = FinalAnswer(kind="number", **{**blank, "number": value})
     elif case.answer_kind == "boolean":
+        if not isinstance(value, bool | int):  # a count stands for "is there any"
+            return f"the tools gave {value!r}, which is not a yes/no or a count"
         answer = FinalAnswer(kind="boolean", **{**blank, "boolean": bool(value)})
     else:
-        answer = FinalAnswer(kind="list", **{**blank, "items": [str(item) for item in value]})
+        in_order = isinstance(value, list | tuple)
+        unordered = case.answer_kind == "set" and isinstance(value, set | frozenset)
+        if not (in_order or unordered) or not all(isinstance(item, str) for item in value):
+            return f"the tools gave {value!r}, which is not a list of identifiers"
+        items = list(value) if in_order else sorted(value)
+        answer = FinalAnswer(kind="list", **{**blank, "items": items})
     verdict = grading.grade(case, answer, truth, franchises=franchises)
     if verdict.correct:
         return None

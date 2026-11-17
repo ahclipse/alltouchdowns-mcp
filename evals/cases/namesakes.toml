@@ -26,7 +26,7 @@ reference_calls = [
   { tool = "find_players", args = { query = "Adrian Peterson" } },
   { tool = "search_touchdowns", args = { player = "adrian-peterson", season = 2007, season_type = "regular" } },
 ]
-notes = "The two namesakes met twice in 2007 (weeks 6 and 15) and 'Adrian Peterson' scored 5 touchdowns in those games, every one of them for Minnesota: an agent that reads the scorer's name and not his team answers 5. The Chicago back's three 2007 touchdowns came against Seattle, Denver and Green Bay. No reference_path: the answer comes from reading the opponents of his three rows. Truth re-derived 2026-11-16: 0 (the mirror question, Minnesota's player against Chicago, gives 5)."
+notes = "The two namesakes met twice in 2007 (weeks 6 and 15) and 'Adrian Peterson' scored 5 touchdowns in those games, every one of them for Minnesota: an agent that reads the scorer's name and not his team answers 5. The Chicago back's three 2007 touchdowns came against Seattle, Denver and Green Bay. No reference_path: the answer comes from reading the opponents of his three rows, as evals/solutions.py does. Truth re-derived 2026-11-16: 0 (the mirror question, Minnesota's player against Chicago, gives 5). What this case cannot see is the choice of slug: looked up player by player, the wrong namesake also gives 0, because Minnesota's player cannot score against Minnesota. It tests the name-not-team trap only, and namesakes-07 tests the slug."
 
 [[case]]
 id = "namesakes-02"
@@ -47,7 +47,7 @@ reference_calls = [
   { tool = "search_touchdowns", args = { player = "chris-henry", season = 2007, season_type = "regular" } },
   { tool = "search_touchdowns", args = { player = "chris-henry-2", season = 2007, season_type = "regular" } },
 ]
-notes = "Tests that the agent reports both namesakes instead of stopping at the first match. No reference_path: find_players lists everyone of the name whatever the season, so its list of slugs is the answer only by accident of the two-season fixture (where it also shows that both men scored in 2007 alone, which is why it stays the only expected tool). The reference therefore checks each namesake against the season, and the answer is the slugs whose search matched something. Truth re-derived 2026-11-16: chris-henry (Cincinnati receiver) and chris-henry-2 (Tennessee running back), two touchdowns each, all in the 2007 regular season."
+notes = "Tests that the agent reports both namesakes instead of stopping at the first match. It does not test the season in the question, because both men qualify; namesakes-06 asks the same of a pair where only one does. No reference_path: find_players lists everyone of the name whatever the season, so its list of slugs is the answer only by accident of the two-season fixture (where it also shows that both men scored in 2007 alone, which is why it stays the only expected tool). The reference therefore checks each namesake against the season, and the answer is the slugs whose search matched something. Truth re-derived 2026-11-16: chris-henry (Cincinnati receiver) and chris-henry-2 (Tennessee running back), two touchdowns each, all in the 2007 regular season."
 
 [[case]]
 id = "namesakes-03"
@@ -74,22 +74,23 @@ notes = "The famous player has the numbered slug: guessing 'adrian-peterson' lan
 id = "namesakes-04"
 category = "namesakes"
 split = "dev"
-question = "How many touchdowns did Tampa Bay tight end Alex Smith score in the 2007 season, regular season and playoffs combined?"
+question = "In which games of the 2007 season, playoffs included, did Tampa Bay tight end Alex Smith score a touchdown?"
 expect = "answer"
-answer_kind = "number"
+answer_kind = "set"
+item_type = "game_id"
 truth_sql = '''
-SELECT COUNT(*) FROM touchdowns t JOIN players p ON p.slug = t.player_slug
+SELECT DISTINCT t.game_id FROM touchdowns t JOIN players p ON p.slug = t.player_slug
 WHERE p.display_name = 'Alex Smith' AND p.position = 'TE' AND t.team_abbr = 'TB'
   AND t.season = 2007
 '''
-expected_tools = [["find_players"], ["search_touchdowns", "get_player"]]
+expected_tools = [["find_players"], ["search_touchdowns"]]
 max_calls = 4
 reference_calls = [
   { tool = "find_players", args = { query = "Alex Smith" } },
   { tool = "search_touchdowns", args = { player = "alex-smith-2", season = 2007 } },
 ]
-reference_path = "matched.total"
-notes = "A numbered slug whose namesake is not in the fixture: the plain slug 'alex-smith' is refused here as unknown, and the numbering implies that on the full data it is a different Alex Smith, so a guessed slug never works. Also checks that the playoff touchdown is added. Truth re-derived 2026-11-16: 4 (3 regular season, 1 in the week 18 playoff game), all receptions."
+reference_path = "touchdowns[*].game_id"
+notes = "A numbered slug whose namesake is not in the fixture: the plain slug 'alex-smith' is refused here as unknown, and the numbering implies that on the full data it is a different Alex Smith, so a guessed slug never works. It asks for the games because the name-lookup row alone answered the count this case used to ask for (3 regular season, 1 playoff, 4 in all). The games need the slug passed to a second tool, and each shortcut drops one: a regular-season search loses the playoff game, and the player summary shows only his first and last touchdown. Truth re-derived 2026-11-16: 2007-05-TB-IND (two touchdowns), 2007-11-TB-ATL and the playoff game 2007-18-NYG-TB, all receptions."
 
 [[case]]
 id = "namesakes-05"
@@ -112,3 +113,68 @@ reference_calls = [
 ]
 reference_path = "touchdowns[*].game_id"
 notes = "Both Chris Henrys scored exactly twice in 2007, so counts cannot tell them apart and the first find_players match is the Cincinnati receiver (games 2007-11-ARI-CIN and 2007-15-CIN-SF, the wrong answer). Truth re-derived 2026-11-16: 2007-07-TEN-HOU and 2007-08-OAK-TEN, one rushing touchdown in each."
+
+[[case]]
+id = "namesakes-06"
+category = "namesakes"
+split = "dev"
+question = "List every player named Adrian Peterson who scored a touchdown in the 2019 regular season."
+expect = "answer"
+answer_kind = "set"
+item_type = "player_slug"
+truth_sql = '''
+SELECT DISTINCT t.player_slug FROM touchdowns t JOIN players p ON p.slug = t.player_slug
+WHERE p.display_name = 'Adrian Peterson' AND t.season = 2019 AND t.postseason = 0
+'''
+expected_tools = [["find_players"]]
+max_calls = 5
+reference_calls = [
+  { tool = "find_players", args = { query = "Adrian Peterson" } },
+  { tool = "search_touchdowns", args = { player = "adrian-peterson", season = 2019, season_type = "regular" } },
+  { tool = "search_touchdowns", args = { player = "adrian-peterson-2", season = 2019, season_type = "regular" } },
+]
+notes = "The pair of namesakes-02. There, both namesakes qualify, so stopping at the first match fails. Here only one does, so listing every match of the name search fails. Between them a pass means the season was checked. No reference_path, for the same reason as namesakes-02. Truth re-derived 2026-11-16: adrian-peterson-2 only (5 rushing touchdowns for Washington); the Chicago back scored in 2007 alone."
+
+[[case]]
+id = "namesakes-07"
+category = "namesakes"
+split = "dev"
+question = "How many touchdowns did Chicago running back Adrian Peterson score against Green Bay in the 2007 regular season?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = '''
+SELECT COUNT(*) FROM touchdowns t
+JOIN players p ON p.slug = t.player_slug
+JOIN games g ON g.game_id = t.game_id
+WHERE p.display_name = 'Adrian Peterson' AND t.team_abbr = 'CHI'
+  AND t.season = 2007 AND t.postseason = 0
+  AND 'GB' IN (g.away_abbr, g.home_abbr)
+'''
+expected_tools = [["find_players"], ["search_touchdowns", "get_game"]]
+max_calls = 4
+reference_calls = [
+  { tool = "find_players", args = { query = "Adrian Peterson" } },
+  { tool = "search_touchdowns", args = { player = "adrian-peterson", season = 2007, season_type = "regular" } },
+]
+notes = "The companion of namesakes-01, with an opponent that tells the two players apart. The Chicago back is the second match of the name search, and the first match gives 0 here: Minnesota played Green Bay twice in 2007 and its Adrian Peterson did not score in either game. Passing the opponent as `team`, which means the team that scored, also gives 0. No reference_path: the answer comes from reading the opponents of his three rows, as evals/solutions.py does. Truth re-derived 2026-11-16: 1, in 2007-16-GB-CHI."
+
+[[case]]
+id = "namesakes-08"
+category = "namesakes"
+split = "heldout"
+tier = "hard"
+question = "Two players named Adrian Peterson scored touchdowns in the 2007 regular season. How many did the two of them score between them in that regular season?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = '''
+SELECT COUNT(*) FROM touchdowns t JOIN players p ON p.slug = t.player_slug
+WHERE p.display_name = 'Adrian Peterson' AND t.season = 2007 AND t.postseason = 0
+'''
+expected_tools = [["find_players"], ["search_touchdowns", "get_player"]]
+max_calls = 5
+reference_calls = [
+  { tool = "find_players", args = { query = "Adrian Peterson" } },
+  { tool = "search_touchdowns", args = { player = "adrian-peterson", season = 2007, season_type = "regular", limit = 1 } },
+  { tool = "search_touchdowns", args = { player = "adrian-peterson-2", season = 2007, season_type = "regular", limit = 1 } },
+]
+notes = "Both namesakes are wanted, and the number on screen is wrong for one of them. The name search shows 3 and 18 regular-season touchdowns, but the 18 covers every loaded season: 13 for Minnesota in 2007 and 5 for Washington in 2019. Adding the two rows gives 21. Truth re-derived 2026-11-16: 16 (3 for Chicago's player, 13 for Minnesota's). The answer is the sum of two searches, worked out in evals/solutions.py."

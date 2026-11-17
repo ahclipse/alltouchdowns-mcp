@@ -16,7 +16,7 @@ expected_tools = [["search_touchdowns"]]
 max_calls = 3
 reference_calls = [{ tool = "search_touchdowns", args = { season = 2019, td_type = "fumble_return", limit = 1 } }]
 reference_path = "matched.total"
-notes = "A count of one type in one season, where the split matters: 39 in the regular season plus 1 in the playoffs (lonnie-johnson-2, week 19). The question describes everything the dataset's fumble_return type holds, because the type is wider than its name: besides fumbles run back it has loose balls recovered in the end zone (five rows of 0 yards here) and returns of blocked kicks (the playoff row is one), so it is higher than an official fumble-return total. The season has no touchdown of type 'other', so an agent that looks there for the blocked kicks adds nothing. Truth re-derived 2026-11-16 by splitting the rows on the game's date: 39 before 4 January 2020 and 1 after, 40."
+notes = "A count of one type in one season, where the split matters: 39 in the regular season plus 1 in the playoffs (lonnie-johnson-2, week 19). The question describes everything the dataset's fumble_return type holds, because the type is wider than its name: besides fumbles run back it has loose balls recovered in the end zone (five rows of 0 yards here) and returns of blocked kicks (the playoff row is one), so it is higher than an official fumble-return total. The type 'other' has no part in this: it holds returns of missed field goals and no blocked kicks, and this season has no touchdown of that type at all. Truth re-derived 2026-11-16 by splitting the rows on the game's date: 39 before 4 January 2020 and 1 after, 40."
 
 [[case]]
 id = "return-types-02"

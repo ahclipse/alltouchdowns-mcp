@@ -8,24 +8,24 @@
 id = "ambiguous-cities-01"
 category = "ambiguous_cities"
 split = "dev"
-question = "Los Angeles visited Kansas City in Week 17 of the 2019 regular season. Which Los Angeles players scored a touchdown in that game?"
+question = "Only one of the two Los Angeles teams played at home in Week 17 of the 2019 regular season. Which of that team's players scored a touchdown in that game?"
 expect = "answer"
 answer_kind = "set"
 item_type = "player_slug"
 truth_sql = '''
 SELECT DISTINCT t.player_slug
-FROM touchdowns t JOIN games g ON g.game_id = t.game_id
-WHERE g.season = 2019 AND g.week = 17 AND g.home_abbr = 'KC' AND t.team_abbr <> 'KC'
-  AND t.player_slug IS NOT NULL
+FROM touchdowns t JOIN games g ON g.game_id = t.game_id JOIN teams tm ON tm.abbr = g.home_abbr
+WHERE g.season = 2019 AND g.week = 17 AND tm.city = 'Los Angeles'
+  AND t.team_abbr = g.home_abbr AND t.player_slug IS NOT NULL
 '''
-expected_tools = [["get_game", "list_games", "search_touchdowns"]]
+expected_tools = [["list_games", "get_game", "search_touchdowns"]]
 max_calls = 4
 reference_calls = [
-  { tool = "get_game", args = { season = 2019, week = 17, team = "Kansas City" } },
-  { tool = "search_touchdowns", args = { team = "LAC", season = 2019, week = 17 } },
+  { tool = "list_games", args = { season = 2019, week = 17 } },
+  { tool = "search_touchdowns", args = { team = "LA", season = 2019, week = 17 } },
 ]
 reference_path = "touchdowns[*].scorer.slug"
-notes = "The opponent decides which Los Angeles team is meant: both played in Week 17, but only LAC played Kansas City. Truth re-derived 2026-11-16: keenan-allen, melvin-gordon, hunter-henry, one touchdown each, read from the seven rows of 2019-17-LAC-KC (the other four are Kansas City's). The wrong Los Angeles team would give four other names."
+notes = "The team is identified by where it played, so there is no unambiguous name to start from: both Los Angeles teams played in Week 17, LA at home to Arizona and LAC away at Kansas City, a bare 'Los Angeles' is refused, and a listing of the week shows both. Until 2026-11-16 the question named the opponent instead, and every trial answered with one call on the opponent without ever touching the ambiguity. Truth re-derived 2026-11-16: malcolm-brown, cooper-kupp, tyler-higbee, robert-woods, four of the seven rows of 2019-17-ARI-LA. The wrong team gives keenan-allen, melvin-gordon and hunter-henry; the whole game adds three Arizona names."
 
 [[case]]
 id = "ambiguous-cities-02"
@@ -91,3 +91,28 @@ max_calls = 3
 reference_calls = [{ tool = "get_game", args = { season = 2019, week = 10, team = "NYG" } }]
 reference_path = "game.touchdown_count"
 notes = "A combined count across both New York teams. They played each other that week (2019-10-NYG-NYJ), so the game's own count is the answer; an agent that looks up each team and adds the two game totals counts everything twice and gets 16. Truth re-derived 2026-11-16: 8, four each, by reading the game's rows."
+
+[[case]]
+id = "ambiguous-cities-05"
+category = "ambiguous_cities"
+split = "dev"
+tier = "hard"
+question = "One of the two New York teams won a game at Dallas during the 2007 season. How many touchdowns did that New York team score in the playoffs of the 2007 season, the championship game included?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = '''
+SELECT COUNT(*) FROM touchdowns
+WHERE season = 2007 AND postseason = 1 AND team_abbr = (
+  SELECT g.away_abbr FROM games g JOIN teams tm ON tm.abbr = g.away_abbr
+  WHERE g.season = 2007 AND g.home_abbr = 'DAL' AND tm.city = 'New York'
+    AND g.away_score > g.home_score
+)
+'''
+expected_tools = [["list_games", "get_game"], ["search_touchdowns", "get_leaderboard", "get_game"]]
+max_calls = 6
+reference_calls = [
+  { tool = "list_games", args = { season = 2007, team = "Dallas" } },
+  { tool = "search_touchdowns", args = { team = "NYG", season = 2007, season_type = "postseason", limit = 1 } },
+]
+reference_path = "matched.postseason"
+notes = "The clue is in the scores, and the win is on the playoff side of the season. New York teams visited Dallas three times in 2007: NYG lost 35-45 in week 1, NYJ lost 3-34 in week 12, and NYG won 21-17 in week 19, a playoff game. An agent that lists only regular-season games finds no such win. Truth re-derived 2026-11-16: NYG, 10 touchdowns in its four playoff games, two of them in the Championship, which the question says to count. The numbers on offer for a wrong reading: 8 (the Championship left out), 44 (its regular season), 54 (both), 0 (the other New York team, which missed the playoffs). Reading the four games one by one is a sound route too, and takes six calls."

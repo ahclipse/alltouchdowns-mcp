@@ -1,0 +1,124 @@
+# Questions that look like the ones to decline and are not. Each shares its wording with a
+# decline category: a quarterback and "touchdown passes", yards, "every single one", a date
+# in a year that is not loaded, a famous player who is not in the data. In the first full
+# pass no decline case had such a twin, so an agent that declined on the trigger words alone
+# would have scored full marks on all 23 of them.
+#
+# The data answers every question here, and "not covered" is the wrong answer.
+
+[[case]]
+id = "answerable-lookalikes-01"
+category = "answerable_lookalikes"
+split = "dev"
+tier = "hard"
+question = "How many touchdown passes did Detroit quarterback David Blough catch in the 2019 season?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = '''
+SELECT COUNT(*) FROM touchdowns t JOIN players p ON p.slug = t.player_slug
+WHERE p.display_name = 'David Blough' AND t.td_type = 'receiving' AND t.season = 2019
+'''
+expected_tools = [["find_players"], ["search_touchdowns", "get_player"]]
+max_calls = 4
+reference_calls = [
+  { tool = "find_players", args = { query = "David Blough" } },
+  { tool = "search_touchdowns", args = { player = "david-blough", season = 2019, td_type = "receiving" } },
+]
+reference_path = "matched.total"
+notes = "The twin of decline-passes-01, which asks how many touchdown passes the same quarterback threw. The words are almost the same and the instructions say such a question cannot be answered, but this one is about a pass he caught, and a catch is credited to him. Truth re-derived 2026-11-16: 1, in 2019-17-GB-DET, his only touchdown in the data. Because it is his only one, the answer equals his total: a pass shows that the agent did not decline, not that it read the type."
+
+[[case]]
+id = "answerable-lookalikes-02"
+category = "answerable_lookalikes"
+split = "heldout"
+tier = "hard"
+question = "How many touchdown passes did San Diego players catch in the playoffs of the 2007 season?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = '''
+SELECT COUNT(*) FROM touchdowns
+WHERE season = 2007 AND postseason = 1 AND team_abbr = 'SD' AND td_type = 'receiving'
+'''
+expected_tools = [["search_touchdowns", "get_leaderboard"]]
+max_calls = 3
+reference_calls = [{ tool = "search_touchdowns", args = { team = "San Diego", season = 2007, td_type = "receiving", season_type = "postseason", limit = 1 } }]
+reference_path = "matched.postseason"
+notes = "Held out: the mirror of decline-passes-03, which asks how many touchdown passes a quarterback threw in his team's playoff games, here for a team no dev case asks that about. Passes caught are receiving touchdowns, which the data holds. Truth re-derived 2026-11-16: 4, in the team's three playoff games; it did not reach the Championship."
+
+[[case]]
+id = "answerable-lookalikes-03"
+category = "answerable_lookalikes"
+split = "dev"
+tier = "hard"
+question = "Add up the lengths of Minnesota running back Chester Taylor's rushing touchdowns in the 2007 regular season. How many yards do they come to?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = '''
+SELECT SUM(t.yards) FROM touchdowns t JOIN players p ON p.slug = t.player_slug
+WHERE p.display_name = 'Chester Taylor' AND t.td_type = 'rushing'
+  AND t.season = 2007 AND t.postseason = 0
+'''
+expected_tools = [["find_players"], ["search_touchdowns"]]
+max_calls = 4
+reference_calls = [
+  { tool = "find_players", args = { query = "Chester Taylor" } },
+  { tool = "search_touchdowns", args = { player = "chester-taylor", season = 2007, td_type = "rushing", season_type = "regular" } },
+]
+notes = "The twin of decline-other-stats-02, which asks for the same player's rushing yards in the same season and uses this number as its trap. The instructions say the data has no yardage totals, which is true of yards gained in a season. The length of each touchdown is recorded, and this question asks only for seven of those added up. Truth re-derived 2026-11-16: 150 (2, 10, 38, 6, 8, 2 and 84). The sum is in evals/solutions.py."
+
+[[case]]
+id = "answerable-lookalikes-04"
+category = "answerable_lookalikes"
+split = "dev"
+tier = "hard"
+question = "Give me every player who returned a kickoff for a touchdown in the 2019 season, regular season and playoffs, every single one of them."
+expect = "answer"
+answer_kind = "set"
+item_type = "player_slug"
+truth_sql = '''
+SELECT DISTINCT player_slug FROM touchdowns
+WHERE season = 2019 AND td_type = 'kickoff_return' AND player_slug IS NOT NULL
+'''
+expected_tools = [["search_touchdowns", "get_leaderboard"]]
+max_calls = 3
+reference_calls = [{ tool = "search_touchdowns", args = { season = 2019, td_type = "kickoff_return" } }]
+reference_path = "touchdowns[*].scorer.slug"
+notes = "Worded like a request for an export, which the instructions say to refuse: 'every', 'every single one', a whole season. It is seven rows on one page. The instruction is about every touchdown of a season, not every touchdown of one rare kind. Truth re-derived 2026-11-16: jamal-agnew, brandon-wilson, micah-hyde, cordarrelle-patterson, jakeem-grant, steven-sims and mecole-hardman, one each, all in the regular season."
+
+[[case]]
+id = "answerable-lookalikes-05"
+category = "answerable_lookalikes"
+split = "dev"
+tier = "hard"
+question = "How many touchdowns were scored in playoff games played in January 2020?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = '''
+SELECT COUNT(*) FROM touchdowns t JOIN games g ON g.game_id = t.game_id
+WHERE g.postseason = 1 AND g.date BETWEEN '2020-01-01' AND '2020-01-31'
+'''
+expected_tools = [["list_games", "search_touchdowns"]]
+max_calls = 4
+reference_calls = [{ tool = "list_games", args = { season = 2019, season_type = "postseason" } }]
+notes = "A date where a season is expected. An agent that passes season 2020 is told it is not covered and is invited to decline, but the instructions say a season's playoff games are played in the following January and February and belong to it: these are the playoffs of the 2019 season. The season's playoff total is the other wrong answer, 62, because the Championship (6 touchdowns) was played on 2 February. Truth re-derived 2026-11-16: 56, in ten games dated 4 to 19 January 2020 (14, 27 and 15 by week). The sum over the dated games is in evals/solutions.py."
+
+[[case]]
+id = "answerable-lookalikes-06"
+category = "answerable_lookalikes"
+split = "dev"
+tier = "hard"
+question = "How many rushing touchdowns did Green Bay quarterback Brett Favre score in the 2007 regular season?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = '''
+SELECT COUNT(*) FROM touchdowns t JOIN players p ON p.slug = t.player_slug
+WHERE p.display_name = 'Brett Favre' AND t.td_type = 'rushing'
+  AND t.season = 2007 AND t.postseason = 0
+'''
+expected_tools = [["find_players", "get_leaderboard", "search_touchdowns"]]
+max_calls = 4
+reference_calls = [
+  { tool = "find_players", args = { query = "Brett Favre" } },
+  { tool = "get_leaderboard", args = { season = 2007, team = "Green Bay", td_type = "rushing", limit = 50 } },
+]
+notes = "A famous player who is not in the fixture at all, which looks like a gap in the data and is not one. Only players with a touchdown are listed, the name search says so, and 2007 is loaded in full, so a starter who cannot be found scored none: the answer is 0. Declining is wrong. That is all the case can tell apart: a number needs only one successful call behind it to count as grounded, so a 0 read from the tools and a 0 remembered or guessed both pass. The team's rushing leaderboard for the season confirms it without his name: three players, all running backs. Truth re-derived 2026-11-16: 0. The check against the leaderboard is in evals/solutions.py, and it holds on the full data too, where he is listed for other seasons."

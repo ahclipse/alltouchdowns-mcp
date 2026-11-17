@@ -54,12 +54,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     run.add_argument("--effort", default="medium", help="model effort level (default: medium)")
     run.add_argument("--reps", type=int, default=3, help="trials per case (default: 3)")
     run.add_argument("--no-tools", action="store_true", help="baseline: no tools, guess")
-    run.add_argument("--only", help="only cases whose category or id starts with this")
+    run.add_argument(
+        "--only", help="only cases whose category or id starts with this (commas for several)"
+    )
     run.add_argument("--split", choices=["dev", "heldout"])
     run.add_argument("--limit", type=int, help="first N cases only")
     run.add_argument("--sample", type=int, help="N cases spread over the suite (for a pilot)")
     run.add_argument("--concurrency", type=int, default=4)
     run.add_argument("--max-cost-usd", type=float, default=5.0, help="stop before spending more")
+    run.add_argument(
+        "--show-thinking",
+        action="store_true",
+        help="keep a summary of the model's reasoning in the traces",
+    )
 
     rebuild = commands.add_parser("report", help="rebuild summary.json and summary.md")
     rebuild.add_argument("run_dir", type=Path)
@@ -184,6 +191,7 @@ def _run(args: argparse.Namespace) -> int:
         sample=args.sample,
         concurrency=args.concurrency,
         max_cost_usd=args.max_cost_usd,
+        show_thinking=args.show_thinking,
     )
     return runner.run(config)
 

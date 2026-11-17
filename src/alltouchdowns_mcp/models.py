@@ -50,6 +50,15 @@ class TdCount(Model):
     total: int
 
 
+class MatchedCount(Model):
+    """How many touchdowns a search matched. A side that `season_type` left out is null: it
+    was not counted, which is not the same as a count of zero."""
+
+    regular_season: int | None
+    postseason: int | None
+    total: int
+
+
 class Team(Model):
     abbr: str = Field(description="Abbreviation used in that season, e.g. 'SD'.")
     name: str = Field(description="City as of that season, e.g. 'San Diego'.")
@@ -197,7 +206,7 @@ class GetPlayerResult(Model):
 
 
 class SearchTouchdownsResult(Model):
-    matched: TdCount = Field(description="How many touchdowns match in total, on all pages.")
+    matched: MatchedCount = Field(description="How many touchdowns match in total, on all pages.")
     touchdowns: list[Touchdown]
     next_cursor: str | None
     filters: AppliedFilters

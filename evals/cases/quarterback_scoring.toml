@@ -2,10 +2,13 @@
 # are the mirror image of the decline cases about passes thrown. The data does hold these
 # counts, so the right behaviour is to answer, not to say "passes are not covered".
 #
-# The subjects are backups and starters on weak teams, and cases 02 to 04 ask for opponents,
-# games or players instead of a count, so that a remembered stat line answers nothing. All
-# four turn out to be about runs: the only three touchdown catches by a quarterback in the
-# fixture seasons are two famous plays and the one decline_passes_thrown.toml uses as a trap.
+# Most subjects are backups and starters on weak teams, and cases 02 to 05 ask for opponents,
+# games or players instead of a count, so that a remembered stat line answers nothing.
+#
+# Cases 01, 02 and 04 are about quarterbacks whose whole record is a handful of runs, so no
+# filter can go wrong: they check only that the question is answered and not declined. Cases
+# 03 and 05 use the few quarterbacks with a mixed record, where it can: runs and a catch, in
+# the regular season and in the playoffs.
 
 [[case]]
 id = "quarterback-scoring-01"
@@ -55,23 +58,23 @@ notes = "The starting quarterback of a team that won two games, asked which oppo
 id = "quarterback-scoring-03"
 category = "quarterback_scoring"
 split = "dev"
-question = "Leaving aside the passes he threw, in which games of the 2019 regular season did Indianapolis quarterback Jacoby Brissett score a touchdown himself?"
+question = "Leaving aside the passes he threw, in which games of the 2019 regular season did Houston quarterback Deshaun Watson score a touchdown himself?"
 expect = "answer"
 answer_kind = "set"
 item_type = "game_id"
 truth_sql = '''
 SELECT DISTINCT t.game_id FROM touchdowns t JOIN players p ON p.slug = t.player_slug
-WHERE p.display_name = 'Jacoby Brissett' AND p.position = 'QB'
+WHERE p.display_name = 'Deshaun Watson' AND p.position = 'QB'
   AND t.season = 2019 AND t.postseason = 0
 '''
 expected_tools = [["find_players"], ["search_touchdowns"]]
 max_calls = 4
 reference_calls = [
-  { tool = "find_players", args = { query = "Jacoby Brissett" } },
-  { tool = "search_touchdowns", args = { player = "jacoby-brissett", season = 2019, season_type = "regular" } },
+  { tool = "find_players", args = { query = "Deshaun Watson" } },
+  { tool = "search_touchdowns", args = { player = "deshaun-watson", season = 2019, season_type = "regular" } },
 ]
 reference_path = "touchdowns[*].game_id"
-notes = "The question names passes thrown only to exclude them, so it must be answered with his own scores, and it asks for the games so that a remembered count is no help. A little-known starter; the question does not say how he scored, and all four of his touchdowns are runs. Indianapolis did not reach the playoffs. Truth re-derived 2026-11-16: 2019-05-IND-KC, 2019-11-JAX-IND, 2019-12-IND-HOU, 2019-16-CAR-IND, one rushing touchdown in each."
+notes = "The question names passes thrown only to exclude them, so it must be answered with his own scores, and it asks for the games so that a remembered count is no help. He has runs and a catch in the regular season and more runs in the playoffs, so each wrong filter changes the answer: keeping only runs loses 2019-13-NE-HOU, where he caught a pass, and ignoring 'regular season' adds the playoff games 2019-18-BUF-HOU and 2019-19-HOU-KC. The case was about a quarterback with four runs and nothing else until 2026-11-16; no filter could go wrong there. Truth re-derived 2026-11-16: 2019-01-HOU-NO, 2019-02-JAX-HOU, 2019-04-CAR-HOU, 2019-06-HOU-KC, 2019-13-NE-HOU, 2019-14-DEN-HOU (eight touchdowns in six games)."
 
 [[case]]
 id = "quarterback-scoring-04"
@@ -86,7 +89,29 @@ SELECT DISTINCT t.player_slug FROM touchdowns t JOIN players p ON p.slug = t.pla
 WHERE p.position = 'QB' AND t.team_abbr = 'MIA' AND t.td_type = 'rushing'
   AND t.season = 2007 AND t.postseason = 0
 '''
-expected_tools = [["get_leaderboard", "search_touchdowns"]]
+expected_tools = [["get_leaderboard", "search_touchdowns"], ["get_leaderboard", "find_players", "get_player"]]
+evidence_field = "position"
 max_calls = 3
 reference_calls = [{ tool = "get_leaderboard", args = { season = 2007, team = "Miami", td_type = "rushing", limit = 50 } }]
-notes = "A team's rushing leaderboard gives each scorer's position; the agent keeps the quarterbacks. No reference_path because the answer is a filter of the six rows, not one field. Truth re-derived 2026-11-16: cleo-lemon (4) and john-beck (1, week 17); the other four Miami rushing scorers are running backs."
+notes = "A team's rushing leaderboard gives each scorer's position; the agent keeps the quarterbacks. Two things are expected of the tools: the scorers, and a result that shows who is a quarterback. A search lists the scorers but not their positions, so an answer built on a search alone took the positions from memory; evidence_field makes that count as not grounded. No reference_path because the answer is a filter of the six rows, not one field. max_calls is sized for the leaderboard; a search followed by a lookup of the two players named also fits it. Truth re-derived 2026-11-16: cleo-lemon (4) and john-beck (1, week 17); the other four Miami rushing scorers are running backs."
+
+[[case]]
+id = "quarterback-scoring-05"
+category = "quarterback_scoring"
+split = "dev"
+tier = "hard"
+question = "Which quarterbacks ran for a touchdown themselves in both the regular season and the playoffs of the 2019 season?"
+expect = "answer"
+answer_kind = "set"
+item_type = "player_slug"
+truth_sql = '''
+SELECT t.player_slug FROM touchdowns t JOIN players p ON p.slug = t.player_slug
+WHERE p.position = 'QB' AND t.td_type = 'rushing' AND t.season = 2019
+GROUP BY t.player_slug
+HAVING SUM(t.postseason = 0) > 0 AND SUM(t.postseason = 1) > 0
+'''
+expected_tools = [["get_leaderboard", "find_players", "get_player"]]
+evidence_field = "position"
+max_calls = 4
+reference_calls = [{ tool = "get_leaderboard", args = { season = 2019, td_type = "rushing", season_type = "postseason", limit = 50 } }]
+notes = "Position, type and both halves of the split at once, across the league. The route that works starts from the playoffs: twelve players ran for a touchdown there, and that leaderboard shows each one's position and his regular-season rushing count beside the playoff one. Starting from the regular season does not work in one call, because 127 players ran for a touchdown and a leaderboard returns 50 ranks. The trap is josh-allen-2: a quarterback with nine regular-season runs who also scored in the playoffs, but on a catch. Truth re-derived 2026-11-16: deshaun-watson (7 and 2), patrick-mahomes (2 and 2), ryan-tannehill (4 and 1). The filter of the twelve rows is worked out in evals/solutions.py."

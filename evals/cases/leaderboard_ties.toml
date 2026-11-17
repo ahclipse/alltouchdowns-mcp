@@ -154,21 +154,22 @@ notes = "A playoffs-only leaderboard with a tie at the cut-off, so four rows. Th
 id = "leaderboard-ties-07"
 category = "leaderboard_ties"
 split = "heldout"
-question = "How many players tied for the most rushing touchdowns in the playoffs that followed the 2007 regular season, the championship game included?"
+question = "How many Minnesota players tied for the team lead in receiving touchdowns in the 2019 regular season?"
 expect = "answer"
 answer_kind = "number"
 truth_sql = '''
 WITH counts AS (
   SELECT player_slug, COUNT(*) AS n FROM touchdowns
-  WHERE season = 2007 AND postseason = 1 AND td_type = 'rushing' AND player_slug IS NOT NULL
+  WHERE season = 2019 AND postseason = 0 AND td_type = 'receiving' AND team_abbr = 'MIN'
+    AND player_slug IS NOT NULL
   GROUP BY player_slug
 )
 SELECT COUNT(*) FROM counts WHERE n = (SELECT MAX(n) FROM counts)
 '''
-expected_tools = [["get_leaderboard"]]
+expected_tools = [["get_leaderboard", "search_touchdowns"]]
 max_calls = 3
-reference_calls = [{ tool = "get_leaderboard", args = { season = 2007, td_type = "rushing", season_type = "postseason", limit = 1 } }]
-notes = "The answer is the size of the tied group at rank 1, which no field holds: a limit of 1 returns exactly the three tied rows and they have to be counted, so there is no reference_path. Truth re-derived 2026-11-16: 3 players (brandon-jacobs, laurence-maroney, ryan-grant) with 3 each, then najeh-davenport on 2. Without the championship game Maroney has 2 and the answer would be 2, hence the wording."
+reference_calls = [{ tool = "get_leaderboard", args = { season = 2019, team = "Minnesota", td_type = "receiving", limit = 1 } }]
+notes = "The answer is the size of the tied group at rank 1, which no field holds: a limit of 1 returns exactly the tied rows and they have to be counted, as evals/solutions.py does. Until 2026-11-16 this case asked about rushing touchdowns in the playoffs of 2007, where three players tied on three touchdowns each, so an agent that reported the leaders' touchdown count was marked right. Here the two numbers differ. Truth re-derived 2026-11-16: 3 players (adam-thielen, kyle-rudolph, stefon-diggs) on 6 each, then bisi-johnson on 3. Wrong readings all give another number: 6 is the leaders' count, adding the playoffs leaves 2 tied on 7, and dropping the type filter leaves 1 (a running back with 13, all of them runs)."
 
 # The last two rank across both fixture seasons instead of inside one, the two ways the tool
 # offers: single seasons side by side (per_season), and each player's seasons added together

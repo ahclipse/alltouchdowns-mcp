@@ -7,7 +7,13 @@ from typing import Literal
 from alltouchdowns_mcp import cursor as cursors
 from alltouchdowns_mcp.db import Database
 from alltouchdowns_mcp.errors import ToolRefusal
-from alltouchdowns_mcp.models import AppliedFilters, SearchTouchdownsResult, SeasonType, TdType
+from alltouchdowns_mcp.models import (
+    AppliedFilters,
+    MatchedCount,
+    SearchTouchdownsResult,
+    SeasonType,
+    TdType,
+)
 from alltouchdowns_mcp.tools import shared
 
 Order = Literal["oldest", "newest", "longest"]
@@ -93,6 +99,15 @@ def search_touchdowns(
         f"SELECT SUM(t.postseason = 0), SUM(t.postseason = 1) FROM touchdowns t WHERE {where}",
         params,
     ).fetchone()
+    regular, postseason = regular or 0, postseason or 0
+    # The side that season_type filtered out is reported as null, not 0. A regular-season
+    # search of a team that reached the playoffs would otherwise say "postseason: 0", and that
+    # reads as "none were scored".
+    matched = MatchedCount(
+        regular_season=None if season_type == "postseason" else regular,
+        postseason=None if season_type == "regular" else postseason,
+        total=regular + postseason,
+    )
 
     # Paging through everything needs at least a player, team or season. Without one, the
     # first page still answers "the longest ever" style questions, but the whole dataset
@@ -140,7 +155,7 @@ def search_touchdowns(
             notes.append("More results exist. Add a player, team or season to page through them.")
 
     return SearchTouchdownsResult(
-        matched=shared.td_count(regular, postseason),
+        matched=matched,
         touchdowns=page,
         next_cursor=next_cursor,
         filters=applied,

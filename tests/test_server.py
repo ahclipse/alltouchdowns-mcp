@@ -98,6 +98,20 @@ async def test_every_tool_returns_attributed_structured_output(client: Client, t
     assert legal.find_banned(text_of(result)) == []
 
 
+async def test_a_search_of_one_side_shows_the_other_as_null_to_the_client(client: Client) -> None:
+    """San Diego reached the 2007 playoffs. A regular-season search must not say it scored
+    0 touchdowns there, and the null has to pass the tool's published output schema."""
+    arguments = {"team": "San Diego", "season": 2007, "season_type": "regular", "limit": 1}
+
+    result = await client.call_tool("search_touchdowns", arguments)
+
+    assert not result.is_error
+    assert result.structured_content is not None
+    matched = result.structured_content["matched"]
+    assert matched == {"regular_season": 49, "postseason": None, "total": 49}
+    assert '"postseason":null' in text_of(result)
+
+
 @pytest.mark.parametrize(
     ("tool", "arguments", "code"),
     [

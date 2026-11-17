@@ -55,6 +55,10 @@ class Case(BaseModel):
     # "fixture" marks a case that is only right against the two-season test database, such as
     # declining a season that the full dataset does cover.
     requires: Literal["any", "fixture"] = "any"
+    # "hard" cases need something the tools do not hand over: combining calls, counting rows,
+    # or resisting a number that is on screen and wrong. They are scored on their own as well,
+    # because every model passed nearly all of the "core" cases.
+    tier: Literal["core", "hard"] = "core"
 
     expect: Literal["answer", "decline"]
     # What kind of answer the question calls for. A decline case states the kind a naive
@@ -66,6 +70,9 @@ class Case(BaseModel):
     # unchanged from the source (see truth.py), never the server's own derived columns.
     truth_sql: str | None = None
     decline_reason: DeclineReason | None = None
+    # Other labels that fit the same decline. The agent sees the labels with no explanation,
+    # and for a question about another league "other" describes it as well as the first does.
+    decline_reason_also: list[DeclineReason] = []
     # For a decline case: SQL for the tempting wrong number, to detect an agent that fell for it.
     trap_sql: str | None = None
 
@@ -74,9 +81,17 @@ class Case(BaseModel):
     expected_tools: list[list[str]] = []
     max_calls: int = 4
 
+    # For a list of players picked by position ("which quarterbacks"): the answer counts as
+    # grounded only if some tool result showed a position beside each player named. Without
+    # this, a list of scorers filtered from memory looks as if it came from the tools.
+    # Position is the only attribute supported: it is the one that sits beside a player's
+    # slug in a result, where the grader can pair the two.
+    evidence_field: Literal["position"] | None = None
+
     # A scripted solution, run in the free pre-flight to prove the case can be answered
     # through the tools. `reference_path` points at the answer inside the last call's result,
-    # e.g. "matched.regular_season" or "rows[*].player.slug".
+    # e.g. "matched.regular_season" or "rows[*].player.slug". A case whose answer is no single
+    # field leaves it out and has a worked solution in solutions.py instead.
     reference_calls: list[ReferenceCall] = []
     reference_path: str | None = None
 
@@ -89,7 +104,7 @@ class Case(BaseModel):
                 raise ValueError("a case that expects an answer needs truth_sql")
             if not self.reference_calls:
                 raise ValueError("a case that expects an answer needs reference_calls")
-            if self.decline_reason or self.trap_sql:
+            if self.decline_reason or self.decline_reason_also or self.trap_sql:
                 raise ValueError("decline_reason and trap_sql belong to decline cases")
         else:
             if not self.decline_reason:
@@ -98,6 +113,8 @@ class Case(BaseModel):
                 raise ValueError("a decline case has no truth_sql or reference_calls")
         if self.answer_kind in ("set", "ordered_list") and self.item_type is None:
             raise ValueError("a list answer needs item_type")
+        if self.evidence_field and (self.expect != "answer" or self.item_type != "player_slug"):
+            raise ValueError("evidence_field belongs to a case that answers with players")
         return self
 
 

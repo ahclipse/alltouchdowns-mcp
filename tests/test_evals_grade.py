@@ -187,6 +187,11 @@ def test_a_list_is_grounded_when_every_item_came_from_a_tool() -> None:
     assert grading.grounded(players, answer("list", items=["Randy-Moss"]), results, FRANCHISES)
     assert not grading.grounded(players, answer("list", items=["tom-brady"]), results, FRANCHISES)
     assert not grading.grounded(players, answer("list", items=["randy-moss"]), [], FRANCHISES)
+    # The whole slug must have been shown. A namesake's numbered slug does not show the plain
+    # one, which is another player; and a longer slug is not shown by a shorter one.
+    assert grading.grounded(players, answer("list", items=["aaron-jones-2"]), results, FRANCHISES)
+    assert not grading.grounded(players, answer("list", items=["aaron-jones"]), results, FRANCHISES)
+    assert not grading.grounded(players, answer("list", items=["moss"]), results, FRANCHISES)
 
 
 def test_a_number_is_grounded_by_any_successful_tool_call() -> None:
@@ -201,6 +206,43 @@ def test_a_number_is_grounded_by_any_successful_tool_call() -> None:
 def test_a_decline_needs_no_tool_call_but_silence_is_never_grounded() -> None:
     assert grading.grounded(decline_case(), answer("not_covered"), [], FRANCHISES)
     assert not grading.grounded(case(), None, ["anything"], FRANCHISES)
+
+
+def test_a_list_chosen_by_an_attribute_needs_that_attribute_from_a_tool() -> None:
+    """Asked which Miami rushing scorers were quarterbacks, three models listed the scorers
+    with a tool that shows no position and picked the two quarterbacks from memory."""
+    quarterbacks = case(answer_kind="set", item_type="player_slug", evidence_field="position")
+    both = answer("list", items=["cleo-lemon", "john-beck"])
+    scorers_only = [
+        '{"touchdowns":[{"scorer":{"slug":"cleo-lemon","name":"Cleo Lemon"}},'
+        '{"scorer":{"slug":"john-beck","name":"John Beck"}}]}'
+    ]
+    leaderboard = [
+        '{"rows":[{"rank":1,"player":{"slug":"cleo-lemon"},"position":"QB"},'
+        '{"rank":5,"player":{"slug":"john-beck"},"position":"QB"}]}'
+    ]
+    one_looked_up = [*scorers_only, '{"matches":[{"slug":"cleo-lemon","position":"QB"}]}']
+    position_unknown = ['{"matches":[{"slug":"cleo-lemon","position":null}]}']
+
+    assert not grading.grounded(quarterbacks, both, scorers_only, FRANCHISES)
+    assert grading.grounded(quarterbacks, both, leaderboard, FRANCHISES)
+    assert not grading.grounded(quarterbacks, both, one_looked_up, FRANCHISES)
+    assert grading.grounded(
+        quarterbacks, answer("list", items=["Cleo-Lemon"]), one_looked_up, FRANCHISES
+    )
+    assert not grading.grounded(
+        quarterbacks, answer("list", items=["cleo-lemon"]), position_unknown, FRANCHISES
+    )
+    # Without the field named, appearing in a result is enough, as before.
+    plain = case(answer_kind="set", item_type="player_slug")
+    assert grading.grounded(plain, both, scorers_only, FRANCHISES)
+
+
+def test_evidence_field_is_only_for_answers_that_list_players() -> None:
+    with pytest.raises(ValueError, match="evidence_field"):
+        case(answer_kind="set", item_type="game_id", evidence_field="position")
+    with pytest.raises(ValueError, match="evidence_field"):
+        decline_case(evidence_field="position")
 
 
 def test_expected_tools_are_alternatives_within_a_group() -> None:
@@ -248,7 +290,7 @@ def test_an_answer_naming_one_franchise_twice_is_refused_as_ungradeable() -> Non
     """SD and LAC are one team to the grader, so an answer listing both cannot be graded."""
     conn = truths.open_database(FIXTURE_DB)
     try:
-        both_eras = case(answer_kind="set", item_type="team_abbr",
+        both_eras = case(answer_kind="set", item_type="team_abbr", reference_path="rows[*].team",
                          truth_sql="SELECT 'SD' UNION SELECT 'LAC' UNION SELECT 'KC'")  # fmt: skip
         distinct = both_eras.model_copy(update={"truth_sql": "SELECT 'SD' UNION SELECT 'KC'"})
 
@@ -325,6 +367,20 @@ def test_a_team_is_grounded_under_any_of_its_names() -> None:
     assert not grading.grounded(teams, answer("list", items=["LA"]), atlanta, FRANCHISES)
 
 
+def test_an_abbreviation_is_not_grounded_by_an_ordinary_word() -> None:
+    """Folded, "NO", "WAS" and "TEN" are words. Only the capitals the tools write count."""
+    teams = case(answer_kind="set", item_type="team_abbr")
+    franchises = {"no": "NO", "new orleans": "NO", "was": "WAS", "washington": "WAS"}
+    words_only = ['{"matches":[],"notes":["No touchdown scorer matches. It was not found."]}']
+    by_abbreviation = ['{"game_id":"2019-17-NO-CAR","notes":["No game is incomplete."]}']
+    by_city = ['{"team":{"abbr":"SEA","name":"Seattle"},"opponent":{"name":"Washington"}}']
+
+    assert not grading.grounded(teams, answer("list", items=["NO"]), words_only, franchises)
+    assert not grading.grounded(teams, answer("list", items=["WAS"]), words_only, franchises)
+    assert grading.grounded(teams, answer("list", items=["no"]), by_abbreviation, franchises)
+    assert grading.grounded(teams, answer("list", items=["WAS"]), by_city, franchises)
+
+
 def test_touchdown_types_ignore_spacing_and_hyphens() -> None:
     types = case(answer_kind="set", item_type="td_type")
     truth = frozenset({"fumble_return", "int_return"})
@@ -387,6 +443,20 @@ def test_a_decline_is_checked_for_its_reason_without_being_graded_on_it() -> Non
     assert grading.decline_reason_matches(declined, for_another) is False
     assert grading.decline_reason_matches(declined, answer("number", number=3)) is None
     assert grading.decline_reason_matches(case(), answer("number", number=3)) is None
+
+
+def test_a_decline_case_can_accept_more_than_one_reason() -> None:
+    """A question about another league in a covered year: the labels reach the agent with no
+    explanation, and four of six trials called it "other" with the true reason in the note."""
+    other_league = decline_case(decline_reason="outside_seasons", decline_reason_also=["other"])
+
+    for reason in ("outside_seasons", "other"):
+        given = answer("not_covered", not_covered_reason=reason)
+        assert grading.decline_reason_matches(other_league, given) is True
+    wrong_label = answer("not_covered", not_covered_reason="bulk_export")
+    assert grading.decline_reason_matches(other_league, wrong_label) is False
+    with pytest.raises(ValueError, match="decline"):
+        case(decline_reason_also=["other"])  # a case that expects an answer has no reasons
 
 
 def test_exact_repeats_of_a_call_are_counted() -> None:

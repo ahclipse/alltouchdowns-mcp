@@ -1,0 +1,97 @@
+# Questions about the other side of the ball, and about what did not happen. In a search,
+# `team` means the team that scored, and no tool has a filter for the opponent, so
+# "touchdowns given up" has to be put together: every touchdown in a team's games, less its
+# own. Absence is the same kind of work: the games a team did not score in, or the teams
+# that did not play, are what is left when one list is taken from another.
+#
+# None of these is a decline. The data holds every piece; the question only needs two of
+# them combined.
+
+[[case]]
+id = "allowed-and-absent-01"
+category = "allowed_and_absent"
+split = "dev"
+tier = "hard"
+question = "How many touchdowns did Cleveland's opponents score against it in the 2019 regular season?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = '''
+SELECT COUNT(*) FROM touchdowns t JOIN games g ON g.game_id = t.game_id
+WHERE g.season = 2019 AND g.postseason = 0 AND 'CLE' IN (g.away_abbr, g.home_abbr)
+  AND t.team_abbr <> 'CLE'
+'''
+expected_tools = [["list_games", "get_game"]]
+max_calls = 5
+reference_calls = [
+  { tool = "list_games", args = { season = 2019, team = "Cleveland", season_type = "regular" } },
+  { tool = "search_touchdowns", args = { team = "Cleveland", season = 2019, season_type = "regular", limit = 1 } },
+]
+notes = "No filter gives this. A search with team = Cleveland returns the 38 touchdowns Cleveland scored, which is the number on offer; the 16 games in its list hold 84 touchdowns between both teams, and none is flagged incomplete. Truth re-derived 2026-11-16: 46, which is 84 less 38. The other ways to go wrong are a decline and sixteen calls for one game each. The subtraction is in evals/solutions.py."
+
+[[case]]
+id = "allowed-and-absent-02"
+category = "allowed_and_absent"
+split = "heldout"
+tier = "hard"
+question = "How many first-quarter touchdowns did Kansas City's opponents score against it in the playoffs of the 2019 season, the championship game included?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = '''
+SELECT COUNT(*) FROM touchdowns t JOIN games g ON g.game_id = t.game_id
+WHERE g.season = 2019 AND g.postseason = 1 AND 'KC' IN (g.away_abbr, g.home_abbr)
+  AND t.team_abbr <> 'KC' AND t.quarter = 1
+'''
+expected_tools = [["search_touchdowns", "get_game"]]
+max_calls = 5
+reference_calls = [{ tool = "search_touchdowns", args = { season = 2019, quarter = 1, season_type = "postseason", limit = 50 } }]
+notes = "Held out. The obvious search, with team = Kansas City, returns 2: its own first-quarter touchdowns. The ones scored against it are the rows of a search without a team whose opponent is Kansas City. The question says 'score against it' and not 'give up', because one of the four was a recovered fumble run back, which a reader could leave out of what a defence gives up. Truth re-derived 2026-11-16: 4 (Houston 3 in week 19, Tennessee 1 in week 20, none in the Championship). The filter of the 13 rows is in evals/solutions.py."
+
+[[case]]
+id = "allowed-and-absent-03"
+category = "allowed_and_absent"
+split = "dev"
+tier = "hard"
+question = "In which of its 2019 regular-season games did New Orleans fail to score a touchdown?"
+expect = "answer"
+answer_kind = "set"
+item_type = "game_id"
+truth_sql = '''
+SELECT g.game_id FROM games g
+WHERE g.season = 2019 AND g.postseason = 0 AND 'NO' IN (g.away_abbr, g.home_abbr)
+  AND NOT EXISTS (
+    SELECT 1 FROM touchdowns t WHERE t.game_id = g.game_id AND t.team_abbr = 'NO'
+  )
+'''
+expected_tools = [["list_games"], ["search_touchdowns", "get_game"]]
+max_calls = 6
+reference_calls = [
+  { tool = "list_games", args = { season = 2019, team = "New Orleans", season_type = "regular" } },
+  { tool = "search_touchdowns", args = { team = "New Orleans", season = 2019, season_type = "regular", limit = 50 } },
+  { tool = "search_touchdowns", args = { team = "New Orleans", season = 2019, season_type = "regular", limit = 50, cursor = "$next_cursor" } },
+]
+notes = "The list of games does not show it. Each of the three games has a touchdown count above zero, the opponents' touchdowns, so reading the list alone says there is no such game. The answer is the 16 games less the 13 in which a New Orleans touchdown appears. The 52 touchdowns run to a second page at the largest size, but both rows on it belong to the last game, which the first page already shows. The final scores in the list are another way in: they leave only a few games in which New Orleans could have scored without a touchdown, and opening those settles it. Truth re-derived 2026-11-16: 2019-02-NO-LA (lost 9-27), 2019-04-DAL-NO (won 12-10) and 2019-10-ATL-NO (lost 9-26). The set difference is in evals/solutions.py."
+
+[[case]]
+id = "allowed-and-absent-04"
+category = "allowed_and_absent"
+split = "dev"
+tier = "hard"
+question = "Which teams did not play in Week 6 of the 2007 regular season?"
+expect = "answer"
+answer_kind = "set"
+item_type = "team_abbr"
+truth_sql = '''
+WITH played AS (
+  SELECT away_abbr AS abbr, week FROM games WHERE season = 2007
+  UNION SELECT home_abbr, week FROM games WHERE season = 2007
+)
+SELECT DISTINCT abbr FROM played
+WHERE abbr NOT IN (SELECT abbr FROM played WHERE week = 6)
+'''
+expected_tools = [["list_games"]]
+max_calls = 4
+reference_calls = [
+  { tool = "list_games", args = { season = 2007, week = 1 } },
+  { tool = "list_games", args = { season = 2007, week = 6 } },
+]
+notes = "The answer is in no result: it is the teams missing from one. The six that did not play have to be found by setting that week's list against a full one, such as Week 1 with all 32 teams. Truth re-derived 2026-11-16: BUF, DEN, DET, IND, PIT, SF. The set difference is in evals/solutions.py. The scripted route takes Week 1 for a full week, which its 16 games show and no tool states. In the second full pass every model made one call and took the list of teams from memory; each was right, and each was marked correct but not grounded, because no result had shown the six teams. Weeks 5 and 7 have 14 games each and name all six, so a second call to either would ground a list taken from memory: read such a trial before counting it as the scripted route."

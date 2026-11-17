@@ -21,8 +21,9 @@ question = "How many rushing touchdowns did Tim Tebow score for Florida in the 2
 expect = "decline"
 answer_kind = "number"
 decline_reason = "outside_seasons"
+decline_reason_also = ["other"]
 trap_sql = "SELECT COUNT(*) FROM touchdowns WHERE season = 2007 AND td_type = 'rushing' AND player_slug IN (SELECT slug FROM players WHERE display_name = 'Tim Tebow')"
-notes = "Another league. The year is one the server covers, so a season argument of 2007 is accepted, but college games are not in the data and the well-known total must not be given from memory. The trap is 0: he has no touchdowns in this data for 2007, which is not an answer about his college season. Trap re-derived 2026-11-16: 0 (no player of that name on the fixture, and 'Florida' is not a team)."
+notes = "Another league. Either label is a right reason: the year asked about is a covered one, and no label names a league. The year is one the server covers, so a season argument of 2007 is accepted, but college games are not in the data and the well-known total must not be given from memory. The trap is 0: he has no touchdowns in this data for 2007, which is not an answer about his college season. Trap re-derived 2026-11-16: 0 (no player of that name on the fixture, and 'Florida' is not a team)."
 
 [[case]]
 id = "decline-outside-seasons-03"
@@ -32,8 +33,9 @@ question = "How many touchdowns were scored in the Canadian Football League's ch
 expect = "decline"
 answer_kind = "number"
 decline_reason = "outside_seasons"
+decline_reason_also = ["other"]
 trap_sql = "SELECT COUNT(*) FROM touchdowns WHERE season = 2019 AND week = 21"
-notes = "Another country's league. The trap is the 6 touchdowns of the one championship game the server does have for 2019, which belongs to a different league. Trap re-derived 2026-11-16 by reading the rows of the week 21 game (truth.CHAMPIONSHIP_WEEK): 6 (Kansas City 4, San Francisco 2)."
+notes = "Another country's league. Either label is a right reason: 2019 is a covered season, and no label names a league. The trap is the 6 touchdowns of the one championship game the server does have for 2019, which belongs to a different league. Trap re-derived 2026-11-16 by reading the rows of the week 21 game (truth.CHAMPIONSHIP_WEEK): 6 (Kansas City 4, San Francisco 2)."
 
 [[case]]
 id = "decline-outside-seasons-04"

@@ -7,6 +7,7 @@ abbreviation), because those differences say nothing about whether the agent was
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -146,6 +147,13 @@ def grounded(
     For a list, every item must appear in something a tool returned. A number cannot be traced
     that way, so it only needs at least one successful tool call behind it. A decline needs
     nothing: recognising that a question is out of scope is the point.
+
+    Appearing is not enough when the question picks players by position. Asked which of a
+    team's scorers are quarterbacks, an agent can list the scorers with one tool and choose
+    among them from memory. Such a case sets `evidence_field`, and each player in the answer
+    must then have been shown with a position beside his slug. That proves the players named
+    and nothing about the ones left out, and it asks for a position, not for a particular
+    one. Neither can turn a wrong list into a pass, because the list is graded exactly.
     """
     if answer is None:
         return False
@@ -156,19 +164,67 @@ def grounded(
     if answer.kind != "list":
         return True
 
-    seen = fold("\n".join(tool_results))
+    shown = "\n".join(tool_results)
+    seen = fold(shown)
     for item in answer.items:
         if case.item_type == "team_abbr":
             # A team counts as seen under any of its names: the tools show the abbreviation of
             # the era, and an agent may reasonably answer with today's.
             franchise = normalise(item, case, franchises)
             spellings = [name for name, owner in franchises.items() if owner == franchise]
-            found = any(re.search(rf"\b{re.escape(name)}\b", seen) for name in spellings)
+            found = any(_team_shown(name, shown, seen) for name in spellings)
         else:
-            found = fold(normalise(item, case, franchises)) in seen
+            # The whole identifier, not the start of a longer one: a result that holds only
+            # "adrian-peterson-2" has not shown "adrian-peterson".
+            identifier = re.escape(fold(normalise(item, case, franchises)))
+            found = re.search(rf"(?<![\w-]){identifier}(?![\w-])", seen) is not None
         if not found:
             return False
+
+    if case.evidence_field:
+        beside = _players_shown_with(case.evidence_field, tool_results)
+        return all(normalise(item, case, franchises) in beside for item in answer.items)
     return True
+
+
+def _team_shown(name: str, shown: str, folded: str) -> bool:
+    """Did the tool results show this way of writing a team?
+
+    A city or a label is compared loosely. An abbreviation counts only in capitals, as the
+    tools write it: folded, "NO", "WAS" and "TEN" are ordinary words, and a note that begins
+    "No touchdown scorer matches" would otherwise show a team.
+    """
+    if name.isalpha() and len(name) <= 3:
+        return re.search(rf"\b{name.upper()}\b", shown) is not None
+    return re.search(rf"\b{re.escape(name)}\b", folded) is not None
+
+
+def _players_shown_with(field: str, tool_results: Sequence[str]) -> set[str]:
+    """The slugs of every player that some tool result showed together with `field`.
+
+    The field sits either on the player's own object (a find_players match) or one level up
+    from it (a leaderboard row, whose `player` holds the slug).
+    """
+    shown: set[str] = set()
+
+    def visit(node: object) -> None:
+        if isinstance(node, list):
+            for child in node:
+                visit(child)
+        elif isinstance(node, dict):
+            if node.get(field) is not None:
+                for holder in (node, *node.values()):
+                    if isinstance(holder, dict) and isinstance(holder.get("slug"), str):
+                        shown.add(holder["slug"].lower())
+            for child in node.values():
+                visit(child)
+
+    for text in tool_results:
+        try:
+            visit(json.loads(text))
+        except ValueError:
+            continue  # not a structured result, so it shows nothing in a named field
+    return shown
 
 
 def decorated(case: Case, answer: FinalAnswer | None) -> bool:
@@ -187,7 +243,7 @@ def decline_reason_matches(case: Case, answer: FinalAnswer | None) -> bool | Non
     None when the question does not apply. Reported, not graded: any decline is a pass."""
     if case.expect != "decline" or answer is None or answer.kind != "not_covered":
         return None
-    return answer.not_covered_reason == case.decline_reason
+    return answer.not_covered_reason in {case.decline_reason, *case.decline_reason_also}
 
 
 def repeated_calls(calls: Sequence[tuple[str, Mapping[str, object]]]) -> int:

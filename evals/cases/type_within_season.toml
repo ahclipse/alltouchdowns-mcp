@@ -1,0 +1,51 @@
+# One touchdown type within one season, for a player who scored in both fixture seasons and
+# in more than one way. Every summary number the tools offer is then wrong: the name search
+# shows his total over all loaded seasons, and the player summary splits by season or by type
+# but never by both. Only a search filtered by season and type gives the answer.
+#
+# These are the harder tier's version of player_season_totals, whose subjects scored in one
+# loaded season only, so that the first number on screen was already the answer.
+
+[[case]]
+id = "type-within-season-01"
+category = "type_within_season"
+split = "dev"
+tier = "hard"
+question = "How many rushing touchdowns did San Francisco running back Frank Gore score in the 2007 regular season?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = '''
+SELECT COUNT(*) FROM touchdowns t JOIN players p ON p.slug = t.player_slug
+WHERE p.display_name = 'Frank Gore' AND t.td_type = 'rushing'
+  AND t.season = 2007 AND t.postseason = 0
+'''
+expected_tools = [["find_players"], ["search_touchdowns"]]
+max_calls = 4
+reference_calls = [
+  { tool = "find_players", args = { query = "Frank Gore" } },
+  { tool = "search_touchdowns", args = { player = "frank-gore", season = 2007, td_type = "rushing", season_type = "regular" } },
+]
+reference_path = "matched.regular_season"
+notes = "A wrong number is on screen before the right one on every route: the name search shows 8 (both seasons, every type). An agent that also opens the player summary sees two more, 6 for 2007 (he also caught a pass that season) and 7 for rushing (two of them in 2019 for Buffalo). The filtered search then gives the answer in one field, so the case is about not stopping at those numbers; it takes no work. Truth re-derived 2026-11-16: 5."
+
+[[case]]
+id = "type-within-season-02"
+category = "type_within_season"
+split = "heldout"
+tier = "hard"
+question = "How many receiving touchdowns did Miami wide receiver Ted Ginn score in the 2007 regular season?"
+expect = "answer"
+answer_kind = "number"
+truth_sql = '''
+SELECT COUNT(*) FROM touchdowns t JOIN players p ON p.slug = t.player_slug
+WHERE p.display_name = 'Ted Ginn' AND t.td_type = 'receiving'
+  AND t.season = 2007 AND t.postseason = 0
+'''
+expected_tools = [["find_players"], ["search_touchdowns"]]
+max_calls = 4
+reference_calls = [
+  { tool = "find_players", args = { query = "Ted Ginn" } },
+  { tool = "search_touchdowns", args = { player = "ted-ginn", season = 2007, td_type = "receiving", season_type = "regular" } },
+]
+reference_path = "matched.regular_season"
+notes = "Held out: the same trap with another player and another type. The name search shows 5 on every route; the player summary, if it is opened, shows 3 for 2007 (one was a punt return) and 4 for receiving (two of them in 2019 for New Orleans). Truth re-derived 2026-11-16: 2."
