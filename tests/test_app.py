@@ -12,6 +12,7 @@ import urllib.request
 from collections.abc import Iterator
 from dataclasses import replace
 from email.message import Message
+from http.client import HTTPConnection
 from pathlib import Path
 
 import pytest
@@ -89,14 +90,35 @@ def test_foreign_host_header_is_rejected(base_url: str) -> None:
 
 
 def test_oversized_request_is_rejected(base_url: str) -> None:
-    body = (
-        b'{"jsonrpc":"2.0","id":1,"method":"tools/list","pad":"' + b"x" * MAX_REQUEST_BYTES + b'"}'
-    )
+    """The server refuses on the size a request declares, before any of the body arrives.
+
+    So the test declares a body one byte over the limit and sends none of it. (Sending it
+    would race with the refusal: a server that closes on unread data resets the connection,
+    and the client may then lose the very response being tested.)
+    """
+    host, port = base_url.removeprefix("http://").split(":")
+    connection = HTTPConnection(host, int(port), timeout=5)
+    try:
+        connection.putrequest("POST", "/mcp")
+        connection.putheader("Content-Type", "application/json")
+        connection.putheader("Accept", "application/json, text/event-stream")
+        connection.putheader("Content-Length", str(MAX_REQUEST_BYTES + 1))
+        connection.endheaders()
+
+        assert connection.getresponse().status == 413
+    finally:
+        connection.close()
+
+
+def test_a_request_at_the_size_limit_is_accepted(base_url: str) -> None:
+    padding = "x" * (MAX_REQUEST_BYTES - 200)
+    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "pad": padding}).encode()
+    assert len(body) <= MAX_REQUEST_BYTES
     headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
 
     status, _ = http(f"{base_url}/mcp", data=body, headers=headers)
 
-    assert status == 413
+    assert status == 200
 
 
 def test_unknown_path_is_not_found(base_url: str) -> None:

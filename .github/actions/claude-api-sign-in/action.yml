@@ -1,0 +1,63 @@
+name: Sign in to the Claude API
+description: >
+  Signs this job in to the Claude API without a stored API key, by workload identity
+  federation. GitHub vouches for the job with a short-lived signed token; this action writes
+  that token where the Anthropic SDK looks for it and keeps it current until the job ends.
+  The job needs the "id-token: write" permission, and the four ANTHROPIC_* identifiers in its
+  environment.
+
+# Two rules on Anthropic's side shape what happens here:
+#   - A GitHub token can be exchanged once. So the file must hold a new token each time the SDK
+#     comes back for an access token, and only one process in a job may sign in. If a job ever
+#     gets a second step that calls the API, run identity-token.sh again just before it.
+#   - An access token lasts at most twice the remaining life of the GitHub token it was
+#     exchanged for. GitHub's token lasts five minutes, so the SDK comes back every four to
+#     eight minutes for as long as the job runs.
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        # An API key in the environment would be used instead of federation, silently, and
+        # would be billed to whichever workspace that key belongs to.
+        if [ -n "${ANTHROPIC_API_KEY:-}${ANTHROPIC_AUTH_TOKEN:-}${ANTHROPIC_PROFILE:-}" ]; then
+          echo "::error::A stored Anthropic credential is set in this job. It would be used instead of federation: remove it."
+          exit 1
+        fi
+
+        export ANTHROPIC_IDENTITY_TOKEN_FILE="$RUNNER_TEMP/github-identity-token"
+        echo "ANTHROPIC_IDENTITY_TOKEN_FILE=$ANTHROPIC_IDENTITY_TOKEN_FILE" >> "$GITHUB_ENV"
+
+        # The first token must arrive, or the job stops here with the reason.
+        bash "$GITHUB_ACTION_PATH/identity-token.sh"
+
+        # Shown on every run: the federation rule must match these exactly, and a sign-in that
+        # is refused says only "authentication failed".
+        claims=$(bash "$GITHUB_ACTION_PATH/identity-claims.sh")
+        echo "GitHub identifies this job as:"
+        echo "$claims" | sed 's/^/  /'
+        echo "::notice title=Identity of this job::$(echo "$claims" | paste -sd ' ' -)"
+
+        # Without these the SDK finds nothing to sign in with, and says so unhelpfully.
+        for name in ANTHROPIC_ORGANIZATION_ID ANTHROPIC_WORKSPACE_ID ANTHROPIC_SERVICE_ACCOUNT_ID ANTHROPIC_FEDERATION_RULE_ID; do
+          if [ -z "${!name:-}" ]; then
+            echo "::error::The repository variable $name is not set (Settings > Secrets and variables > Actions > Variables)."
+            exit 1
+          fi
+        done
+
+        # Replace the token every two minutes for as long as the job runs. After a failure,
+        # try again in 15 seconds instead: two missed refreshes in a row would leave a token
+        # the API no longer accepts. The previous token stays in place meanwhile.
+        (
+          wait=120
+          while sleep "$wait"; do
+            if bash "$GITHUB_ACTION_PATH/identity-token.sh"; then
+              wait=120
+            else
+              wait=15
+              echo "$(date -u +%T) could not refresh the identity token; trying again in 15 seconds"
+            fi
+          done
+        ) >> "$RUNNER_TEMP/identity-token.log" 2>&1 &

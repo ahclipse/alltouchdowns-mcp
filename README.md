@@ -63,11 +63,14 @@ The eval suite lives in [`evals/`](evals). An agent (a Claude model) gets the se
 
 In CI the suite runs against a committed two-season fixture (2007 and 2019), so every question is about those seasons. That limits what it can show: true career totals are not tested, and paging is tested only up to six pages.
 
+In CI the paid runs sign in without a stored API key. GitHub issues each job a short-lived signed token, and the API exchanges it for a short-lived access token under a rule that accepts only this repository's protected environment (workload identity federation).
+
 Scores will be published here once the first baseline has been measured.
 
 ```bash
 uv run python -m evals preflight   # free: are the cases and grader sound?
 uv run python -m evals selftest    # free: does the harness score known agents correctly?
+uv run python -m evals sign-in     # free: are the API credentials accepted, and the models offered?
 uv run python -m evals run --model claude-haiku-5-5 --reps 1 --limit 10 --out evals/runs/pilot   # a 10-case pilot; costs money
 ```
 

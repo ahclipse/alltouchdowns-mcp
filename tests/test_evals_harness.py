@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import AsyncIterator
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -11,6 +12,7 @@ from typing import Any
 import anthropic
 import httpx2
 import pytest
+from anthropic.lib.credentials import WorkloadIdentityError
 from mcp.types import TextContent
 
 from evals import agent, preflight, report, runner, scripted
@@ -45,6 +47,95 @@ def test_oracle_scores_everything_and_null_scores_nothing(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     assert evals_main(["selftest"]) == 0, reported_failures(capsys)
+
+
+class _Models:
+    """Stands in for the API's list of models."""
+
+    def __init__(self, *ids: str, failure: Exception | None = None) -> None:
+        self.ids, self.failure, self.models = ids, failure, self
+
+    def list(self, **_: Any) -> list[SimpleNamespace]:
+        if self.failure:
+            raise self.failure
+        return [SimpleNamespace(id=model_id) for model_id in self.ids]
+
+
+def test_sign_in_check_passes_when_every_model_we_use_is_offered(monkeypatch, capsys) -> None:
+    ours = [model for model in report.PRICES if not runner.is_scripted(model)]
+    monkeypatch.setattr(anthropic, "Anthropic", lambda: _Models(*ours, "some-other-model"))
+
+    assert evals_main(["sign-in"]) == 0
+    assert "NOT AVAILABLE" not in capsys.readouterr().out
+
+
+def test_sign_in_check_names_a_model_that_is_not_offered(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(anthropic, "Anthropic", lambda: _Models("claude-haiku-5-5"))
+
+    assert evals_main(["sign-in"]) == 1
+    assert "NOT AVAILABLE  claude-opus-5-5" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [anthropic.AnthropicError("Token exchange failed"), TypeError("Could not resolve it")],
+)
+def test_sign_in_check_reports_a_failure_without_a_traceback(
+    monkeypatch, capsys, failure: Exception
+) -> None:
+    """The second kind is what the SDK raises when it finds no credentials at all."""
+    monkeypatch.setattr(anthropic, "Anthropic", lambda: _Models(failure=failure))
+
+    assert evals_main(["sign-in"]) == 1
+    reported = capsys.readouterr().out
+    assert f"FAILED: could not sign in: {type(failure).__name__}: {failure}" in reported
+
+
+class _AsyncModels:
+    """Stands in for the async client's list of models."""
+
+    def __init__(self, *ids: str, failure: Exception | None = None) -> None:
+        self.ids, self.failure, self.models = ids, failure, self
+
+    async def _listed(self) -> AsyncIterator[SimpleNamespace]:
+        if self.failure:
+            raise self.failure
+        for model_id in self.ids:
+            yield SimpleNamespace(id=model_id)
+
+    def list(self, **_: Any) -> AsyncIterator[SimpleNamespace]:
+        return self._listed()
+
+
+@pytest.mark.anyio
+async def test_a_run_checks_sign_in_before_anything_is_spent() -> None:
+    await runner._require_sign_in(_AsyncModels("claude-haiku-5-5"), "claude-haiku-5-5")
+
+    with pytest.raises(SystemExit, match="does not offer claude-opus-5-5"):
+        await runner._require_sign_in(_AsyncModels("claude-haiku-5-5"), "claude-opus-5-5")
+    refused = WorkloadIdentityError("Token exchange failed", status_code=401)
+    with pytest.raises(SystemExit, match=r"could not sign in.*Token exchange failed"):
+        await runner._require_sign_in(_AsyncModels(failure=refused), "claude-haiku-5-5")
+    with pytest.raises(SystemExit, match=r"could not sign in.*TypeError"):
+        await runner._require_sign_in(_AsyncModels(failure=TypeError("no credentials")), "m")
+
+
+def test_refused_credentials_stop_a_run_and_a_failed_request_does_not() -> None:
+    request = httpx2.Request("POST", "https://example.test")
+    unauthorised = anthropic.AuthenticationError(
+        "no", response=httpx2.Response(401, request=request), body=None
+    )
+    overloaded = anthropic.InternalServerError(
+        "busy", response=httpx2.Response(529, request=request), body=None
+    )
+
+    assert runner._sign_in_refused(unauthorised)
+    assert runner._sign_in_refused(WorkloadIdentityError("refused", status_code=401))
+    assert runner._sign_in_refused(anthropic.CredentialsError("no token file"))
+    assert not runner._sign_in_refused(WorkloadIdentityError("unreachable"))  # may recover
+    assert not runner._sign_in_refused(overloaded)
+    # None of them is a fault of this code, so none is filed under "harness".
+    assert runner._error_class(WorkloadIdentityError("unreachable")) == "api"
 
 
 def test_cases_are_a_usable_set() -> None:

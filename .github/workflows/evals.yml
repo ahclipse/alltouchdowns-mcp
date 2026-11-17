@@ -1,14 +1,22 @@
 name: Evals
 
 # Runs the eval suite against real models, which costs money. It never runs on a pull
-# request, so code from outside the repository can never reach the API key.
+# request, so code from outside the repository can never spend anything.
 #
-#   push to main        a cheap smoke run on the smallest model, one trial per case
-#   weekly / on demand  the scored run: three models, compared with the stored baseline
+#   push to main   a cheap smoke run on the smallest model, one trial per case
+#   weekly         the scored run: three models, compared with the stored baseline
+#   by hand        either a free check that sign-in works (the default), or the scored run
 #
 # The automatic runs are opt-in: they are skipped until the repository variable EVALS_ENABLED
 # is set to "true" (Settings > Secrets and variables > Actions > Variables). A run started by
-# hand needs no switch. Either way the key must be in the "evals" environment.
+# hand needs no switch.
+#
+# No API key is stored in GitHub. A job signs in by workload identity federation: GitHub issues
+# it a short-lived signed token saying which repository, branch, environment and workflow file
+# it runs in, and Anthropic exchanges that for a short-lived access token. The rule on
+# Anthropic's side accepts only this workflow, on the main branch, in the "evals" environment
+# (which GitHub also restricts to main), and lets it do one thing: call models in one workspace
+# that has a monthly spending limit.
 on:
   push:
     branches: [main]
@@ -21,15 +29,30 @@ on:
     - cron: "17 14 * * 2" # Tuesdays, 14:17 UTC
   workflow_dispatch:
     inputs:
+      what:
+        description: sign-in-check is free. scored-run calls three models and costs money.
+        type: choice
+        options: [sign-in-check, scored-run]
+        default: sign-in-check
       reps:
-        description: Trials per case
+        description: "Scored run: trials per case"
         default: "3"
       max_cost_usd:
-        description: Stop a model's run before it spends more than this
+        description: "Scored run: stop a model's run before it spends more than this"
         default: "8"
 
 permissions:
   contents: read
+  id-token: write # lets a job ask GitHub for the signed token described above
+
+# Which Anthropic organization, workspace, service account and federation rule to sign in to.
+# These are identifiers, not secrets: without a token signed by GitHub for this repository
+# they open nothing. The SDK reads them from the environment.
+env:
+  ANTHROPIC_ORGANIZATION_ID: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
+  ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
+  ANTHROPIC_SERVICE_ACCOUNT_ID: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
+  ANTHROPIC_FEDERATION_RULE_ID: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
 
 concurrency:
   group: evals-${{ github.ref }}
@@ -40,19 +63,21 @@ jobs:
     if: github.event_name == 'push' && vars.EVALS_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    environment: evals # holds ANTHROPIC_API_KEY; restricted to the main branch
+    environment: evals # restricted to the main branch; the federation rule names it
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       - run: uv sync --locked --extra evals
       - run: uv run python -m evals preflight
       - run: uv run python -m evals selftest
+      - uses: ./.github/actions/claude-api-sign-in
       - name: Smoke run
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: >
           uv run python -m evals run --model claude-haiku-5-5 --reps 1
           --max-cost-usd 1 --out evals/runs/smoke
+      - name: Identity token log
+        if: failure()
+        run: cat "$RUNNER_TEMP/identity-token.log" 2>/dev/null || echo "every refresh succeeded"
       - name: Summary
         if: always()
         run: cat evals/runs/smoke/summary.md >> "$GITHUB_STEP_SUMMARY" || true
@@ -68,9 +93,23 @@ jobs:
           path: evals/shared/smoke
           retention-days: 7
 
+  # Free. Proves the federation set-up end to end: GitHub issues the token, Anthropic accepts
+  # it, and the three models the scored run uses are available. It never calls a model.
+  sign-in-check:
+    if: github.event_name == 'workflow_dispatch' && inputs.what == 'sign-in-check'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: evals
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - run: uv sync --locked --extra evals
+      - uses: ./.github/actions/claude-api-sign-in
+      - run: uv run python -m evals sign-in
+
   scored:
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_dispatch' && inputs.what == 'scored-run') ||
       (github.event_name == 'schedule' && vars.EVALS_ENABLED == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -85,14 +124,17 @@ jobs:
       - run: uv sync --locked --extra evals
       - run: uv run python -m evals preflight
       - run: uv run python -m evals selftest
+      - uses: ./.github/actions/claude-api-sign-in
       - name: Run
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           REPS: ${{ inputs.reps || '3' }}
           MAX_COST: ${{ inputs.max_cost_usd || '8' }}
         run: >
           uv run python -m evals run --model ${{ matrix.model }} --reps "$REPS"
           --max-cost-usd "$MAX_COST" --out evals/runs/${{ matrix.model }}
+      - name: Identity token log
+        if: failure()
+        run: cat "$RUNNER_TEMP/identity-token.log" 2>/dev/null || echo "every refresh succeeded"
       - name: Summary
         if: always()
         run: cat evals/runs/${{ matrix.model }}/summary.md >> "$GITHUB_STEP_SUMMARY" || true

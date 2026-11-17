@@ -2,6 +2,7 @@
 
 preflight   free checks on the cases and grader (run on every pull request)
 selftest    free check of the whole harness, using scripted stand-ins for the model
+sign-in     free check that the API accepts our credentials and offers the models we use
 run         a real run against a model. This one costs money.
 report      rebuild the summary of a finished run
 share       copy a run without the model's own words (what CI uploads)
@@ -18,6 +19,7 @@ import tempfile
 from collections.abc import Sequence
 from pathlib import Path
 
+import anthropic
 import anyio
 
 from evals import preflight, report, runner, scripted
@@ -43,6 +45,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     check.add_argument("--only", help="only cases whose category or id starts with this")
 
     commands.add_parser("selftest", help="free check of the harness with scripted agents")
+
+    commands.add_parser("sign-in", help="free check of the API credentials and models")
 
     run = commands.add_parser("run", help="run the suite against a model (costs money)")
     run.add_argument("--model", required=True, help="e.g. claude-opus-5-5")
@@ -75,6 +79,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     return {
         "preflight": _preflight,
         "selftest": _selftest,
+        "sign-in": _sign_in,
         "run": _run,
         "report": _report,
         "share": _share,
@@ -144,6 +149,23 @@ def _what_went_wrong(row: dict) -> str:
     return f"{row['case_id']}: {outcome}" + (
         f", tool errors {failed_calls}" if failed_calls else ""
     )
+
+
+def _sign_in(args: argparse.Namespace) -> int:
+    """Ask the API which models we may use. It costs nothing and calls no model, so it is the
+    way to find out that a key or a federation rule is wrong before any money is spent."""
+    try:
+        available = {model.id for model in anthropic.Anthropic().models.list(limit=1000)}
+    except Exception as error:
+        # Any failure here is the answer to the question asked, so it is reported, not raised.
+        # (With no credentials at all the SDK raises a plain TypeError, not one of its own.)
+        print(f"FAILED: could not sign in: {type(error).__name__}: {str(error)[:400]}")
+        return 1
+    wanted = [model for model in report.PRICES if not runner.is_scripted(model)]
+    print(f"signed in: {len(available)} models are available")
+    for model in wanted:
+        print(f"  {'available    ' if model in available else 'NOT AVAILABLE'}  {model}")
+    return 0 if all(model in available for model in wanted) else 1
 
 
 def _run(args: argparse.Namespace) -> int:

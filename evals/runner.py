@@ -35,6 +35,7 @@ from typing import Any
 
 import anthropic
 import uvicorn
+from anthropic.lib.credentials import WorkloadIdentityError
 from mcp import Client
 
 from alltouchdowns_mcp import legal
@@ -113,6 +114,7 @@ async def _run(config: RunConfig) -> int:
         else:
             # max_retries=0: the agent retries itself, so retries are counted and not timed.
             api = anthropic.AsyncAnthropic(max_retries=0)
+            await _require_sign_in(api, config.model)
         state = _RunState(config, url, api, system, tools, answers, traps, franchises)
         # The cost cap covers the whole run directory, including what earlier runs spent.
         state.spent = report.total_cost(earlier_rows, earlier_errors)
@@ -197,8 +199,8 @@ class _RunState:
                     await agent.run_trial(self.api, None, trial=trial, **settings)
         except Exception as raised:
             error = _root_cause(raised)
-            # Two failures that every later trial would repeat, at a price: stop at once.
-            if isinstance(error, anthropic.AuthenticationError):
+            # Failures that every later trial would repeat: stop at once.
+            if _sign_in_refused(error):
                 self.stopped = "the API rejected the credentials"
             if isinstance(error, agent.ModelMismatch):
                 self.stopped = "the API answered with a different model than the one asked for"
@@ -279,18 +281,42 @@ def _root_cause(error: BaseException) -> BaseException:
     return error
 
 
+def _sign_in_refused(error: BaseException) -> bool:
+    """The credentials themselves were turned down, as opposed to a request failing."""
+    if isinstance(error, anthropic.AuthenticationError | anthropic.CredentialsError):
+        return True
+    # Signing in by federation: the exchange of GitHub's token for an access token was refused.
+    return isinstance(error, WorkloadIdentityError) and error.status_code == 401
+
+
 def _error_class(error: BaseException) -> str:
     """Why a trial could not be completed. None of these is the model getting it wrong."""
     if isinstance(error, agent.ModelMismatch):
         return "model_mismatch"
     if isinstance(error, TimeoutError):
         return "timeout"
-    if isinstance(error, anthropic.APIError | RuntimeError):
+    if isinstance(error, anthropic.APIError | WorkloadIdentityError | RuntimeError):
         return "api"
     return "harness"  # a bug in this code or in the server
 
 
 # --- set-up ----------------------------------------------------------------------------------
+
+
+async def _require_sign_in(api: Any, model: str) -> None:
+    """Before anything is spent, ask the API which models these credentials may use.
+
+    The question is free. A refused key, a federation rule that does not match and a model
+    that is not offered all end the run here, with the reason, instead of failing every trial
+    one after another.
+    """
+    try:
+        offered = {listed.id async for listed in api.models.list(limit=1000)}
+    except Exception as error:
+        reason = f"{type(error).__name__}: {str(error)[:400]}"
+        raise SystemExit(f"could not sign in to the API: {reason}") from None
+    if model not in offered:
+        raise SystemExit(f"the API does not offer {model} to these credentials")
 
 
 def _select_cases(config: RunConfig, conn) -> list[Case]:
