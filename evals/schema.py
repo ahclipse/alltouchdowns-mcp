@@ -122,7 +122,11 @@ ANSWER_SCHEMA: dict[str, Any] = {
     "properties": {
         "kind": {"type": "string", "enum": ["number", "list", "boolean", "not_covered"]},
         "number": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
-        "items": {"type": "array", "items": {"type": "string"}},
+        "items": {
+            "type": "array",
+            "description": "Bare identifiers only: one per item, with no other text.",
+            "items": {"type": "string"},
+        },
         "boolean": {"anyOf": [{"type": "boolean"}, {"type": "null"}]},
         "not_covered_reason": {
             "anyOf": [

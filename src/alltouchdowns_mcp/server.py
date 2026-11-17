@@ -44,7 +44,8 @@ _SLUG = "Player slug, exactly as find_players returned it."
 _TD_TYPE = (
     "Kind of touchdown. 'receiving' is a caught pass, credited to the receiver. "
     "'fumble_return' is any recovered loose ball: a fumble run back, a ball recovered in the "
-    "end zone, and most returns of blocked kicks. 'other' is the few that fit no type."
+    "end zone, and most returns of blocked kicks (the rest are under 'other'). 'other' is "
+    "the few that fit no type."
 )
 _SEASON_TYPE = "Count regular season games, postseason games, or all."
 _CURSOR = "next_cursor from the previous page of the same search."

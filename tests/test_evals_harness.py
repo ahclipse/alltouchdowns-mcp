@@ -230,6 +230,16 @@ def test_filters_select_cases(tmp_path: Path) -> None:
     assert len(rows(tmp_path / "b")) == 1
 
 
+def test_a_sample_is_spread_over_the_whole_suite(tmp_path: Path) -> None:
+    """A pilot of the first ten cases would be ten of the same kind."""
+    runner.run(config(tmp_path, sample=10))
+
+    results = rows(tmp_path)
+    assert len(results) == 10 and len({row["case_id"] for row in results}) == 10
+    assert len({row["category"] for row in results}) >= 8
+    assert {row["expect"] for row in results} == {"answer", "decline"}
+
+
 def test_no_tools_baseline_asks_only_answerable_questions(tmp_path: Path) -> None:
     runner.run(config(tmp_path, model=scripted.NULL, tools=False))
 
@@ -479,6 +489,12 @@ async def test_final_answer_is_parsed_and_usage_added_up() -> None:
         "cache_creation_input_tokens": 0,
     }
     request = api.requests[0]
+    # What every trial shares is marked for caching on its own, so that it is written once per
+    # run and not once per trial. The pilot showed the difference: about two thirds of the cost.
+    assert request["system"] == [
+        {"type": "text", "text": "s", "cache_control": {"type": "ephemeral"}}
+    ]
+    assert request["cache_control"] == {"type": "ephemeral"}  # and the growing conversation
     assert request["output_config"]["effort"] == "medium"
     assert request["output_config"]["format"]["type"] == "json_schema"
     assert "tools" not in request and "temperature" not in request
@@ -605,6 +621,7 @@ def graded(case_id: str, *, correct: bool = True, status: str = "ok") -> dict[st
         "answer_kind_given": "number" if status == "ok" else None,
         "correct": correct, "failure": None if correct else "no_answer", "grounded": correct,
         "expected_tools_used": True, "tool_calls": [], "over_budget": False,
+        "repeated_calls": 0, "decorated_items": False, "decline_reason_matches": None,
         "forced_final": False, "turns": 1, "api_retries": 0, "model_seconds": 1.0,
         "usage": dict(agent.Trial().usage), "banned_terms_from_model": 0,
     }  # fmt: skip

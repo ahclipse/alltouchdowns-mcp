@@ -60,7 +60,8 @@ class RunConfig:
     tools: bool = True  # False runs the no-tools baseline: what can the model answer unaided?
     only: str | None = None  # category or id prefix
     split: str | None = None  # "dev" or "heldout"
-    limit: int | None = None  # first N cases only, for a pilot
+    limit: int | None = None  # first N cases only
+    sample: int | None = None  # N cases spread evenly over the suite, for a pilot
     concurrency: int = 4
     max_turns: int = 10
     trial_timeout_s: float = 300.0
@@ -253,6 +254,11 @@ class _RunState:
                 for call in trial.tool_calls
             ],
             "over_budget": len(trial.tool_calls) > case.max_calls,
+            "repeated_calls": grade.repeated_calls(
+                [(call.name, call.arguments) for call in trial.tool_calls]
+            ),
+            "decorated_items": grade.decorated(case, answer),
+            "decline_reason_matches": grade.decline_reason_matches(case, answer),
             "forced_final": trial.forced_final,
             "turns": trial.turns,
             "api_retries": trial.api_retries,
@@ -329,6 +335,11 @@ def _select_cases(config: RunConfig, conn) -> list[Case]:
         ]
     if config.split:
         cases = [c for c in cases if c.split == config.split]
+    if config.sample and config.sample < len(cases):
+        # Evenly spaced through the list, which is ordered by category, so that even a small
+        # sample touches every part of the suite. The first N would all be of one kind.
+        step = len(cases) / config.sample
+        cases = [cases[int(index * step)] for index in range(config.sample)]
     return cases[: config.limit] if config.limit else cases
 
 

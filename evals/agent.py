@@ -32,9 +32,10 @@ ANSWER_RULES = """\
 Answer the user's question using the tools. Your final reply must be a JSON object:
 
 - kind "number": put the count in `number`.
-- kind "list": put the answers in `items`. Identify players by slug, games by game_id, teams \
-by abbreviation and touchdown types by the type value the tools use. If the question asks for \
-an order, list the items in that order.
+- kind "list": put the answers in `items`, one identifier per item and nothing else: a \
+player's slug, a game's game_id, a team's abbreviation or a touchdown type, exactly as the \
+tools return it. Do not add a name, count, position, date or comment to an item; anything \
+like that goes in `note`. If the question asks for an order, list the items in that order.
 - kind "boolean": put true or false in `boolean`.
 - kind "not_covered": use this when the question cannot be answered from this data, and give \
 the closest `not_covered_reason`. Do not answer such a question from memory.
@@ -125,7 +126,13 @@ async def run_trial(
         request: dict[str, Any] = {
             "model": model,
             "max_tokens": MAX_TOKENS,
-            "system": system,
+            # Two cache markers. This one, on the system prompt, covers what every trial of a
+            # run shares: the tool definitions and the instructions, which come first in what
+            # the model reads. Only the first trial pays to write that; the rest read it. The
+            # top-level marker further down caches the conversation as it grows within a
+            # trial. With that one alone, every trial wrote the shared part again, because
+            # its cache entry ended with that trial's own question.
+            "system": [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
             "messages": messages,
             "output_config": {
                 "effort": effort,

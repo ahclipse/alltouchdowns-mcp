@@ -345,3 +345,56 @@ def test_an_answer_shown_to_the_agent_before_any_call_is_a_leak() -> None:
     assert len(leaks) == 1 and "adrian-peterson-2" in leaks[0]
     assert preflight._leaked(players, [frozenset({"randy-moss"})], shown) == []
     assert preflight._leaked(case(), 2, "the number 2 appears here") == []  # numbers: not checked
+
+
+def test_an_item_with_a_comment_attached_is_graded_on_its_identifier() -> None:
+    """A small model in the pilot answered "torry-holt (WR, 7 TD)". The player is right; the
+    form is not, and the two are reported separately."""
+    players = case(answer_kind="ordered_list", item_type="player_slug")
+    truth = [frozenset({"torry-holt"}), frozenset({"steven-jackson"})]
+    results = ['{"rows":[{"player":{"slug":"torry-holt"}},{"player":{"slug":"steven-jackson"}}]}']
+    commented = answer("list", items=["torry-holt (WR, 7 TD)", "steven-jackson (RB, 6 TD)"])
+    bare = answer("list", items=["torry-holt", "steven-jackson"])
+
+    assert check(players, commented, truth).correct
+    assert grading.grounded(players, commented, results, FRANCHISES)
+    assert grading.decorated(players, commented) and not grading.decorated(players, bare)
+    # The comment cannot rescue a wrong identifier, or smuggle in a second one.
+    assert not check(
+        players, answer("list", items=["torry-holt-2 (WR)", "steven-jackson"]), truth
+    ).correct
+    assert not check(players, answer("list", items=["torry-holt steven-jackson"]), truth).correct
+
+    games = case(answer_kind="set", item_type="game_id")
+    dated = answer("list", items=["2019-08-car-sf (Week 8, vs Carolina)"])
+    assert check(games, dated, frozenset({"2019-08-CAR-SF"})).correct
+    assert grading.decorated(games, dated)
+
+
+def test_a_team_named_by_its_label_is_not_called_decorated() -> None:
+    teams = case(answer_kind="set", item_type="team_abbr")
+
+    assert not grading.decorated(teams, answer("list", items=["Los Angeles (LAC)", "Kansas City"]))
+
+
+def test_a_decline_is_checked_for_its_reason_without_being_graded_on_it() -> None:
+    declined = decline_case()  # the right reason is passer_not_credited
+    for_the_right_reason = answer("not_covered", not_covered_reason="passer_not_credited")
+    for_another = answer("not_covered", not_covered_reason="other")
+
+    assert check(declined, for_another, None).correct  # any decline passes
+    assert grading.decline_reason_matches(declined, for_the_right_reason) is True
+    assert grading.decline_reason_matches(declined, for_another) is False
+    assert grading.decline_reason_matches(declined, answer("number", number=3)) is None
+    assert grading.decline_reason_matches(case(), answer("number", number=3)) is None
+
+
+def test_exact_repeats_of_a_call_are_counted() -> None:
+    same = ("get_player", {"slug": "chester-taylor"})
+    calls = [("find_players", {"query": "Chester Taylor"}), same, same, same,
+             ("get_player", {"slug": "someone-else"})]  # fmt: skip
+
+    assert grading.repeated_calls(calls) == 2
+    assert grading.repeated_calls([]) == 0
+    reordered = [("search", {"season": 2019, "week": 2}), ("search", {"week": 2, "season": 2019})]
+    assert grading.repeated_calls(reordered) == 1  # the same call, arguments in another order

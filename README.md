@@ -71,7 +71,7 @@ Scores will be published here once the first baseline has been measured.
 uv run python -m evals preflight   # free: are the cases and grader sound?
 uv run python -m evals selftest    # free: does the harness score known agents correctly?
 uv run python -m evals sign-in     # free: are the API credentials accepted, and the models offered?
-uv run python -m evals run --model claude-haiku-5-5 --reps 1 --limit 10 --out evals/runs/pilot   # a 10-case pilot; costs money
+uv run python -m evals run --model claude-haiku-5-5 --reps 1 --sample 10 --out evals/runs/pilot   # a 10-case pilot; costs money
 ```
 
 ## Run it locally

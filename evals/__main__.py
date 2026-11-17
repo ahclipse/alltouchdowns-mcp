@@ -56,7 +56,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     run.add_argument("--no-tools", action="store_true", help="baseline: no tools, guess")
     run.add_argument("--only", help="only cases whose category or id starts with this")
     run.add_argument("--split", choices=["dev", "heldout"])
-    run.add_argument("--limit", type=int, help="first N cases only (for a pilot)")
+    run.add_argument("--limit", type=int, help="first N cases only")
+    run.add_argument("--sample", type=int, help="N cases spread over the suite (for a pilot)")
     run.add_argument("--concurrency", type=int, default=4)
     run.add_argument("--max-cost-usd", type=float, default=5.0, help="stop before spending more")
 
@@ -180,6 +181,7 @@ def _run(args: argparse.Namespace) -> int:
         only=args.only,
         split=args.split,
         limit=args.limit,
+        sample=args.sample,
         concurrency=args.concurrency,
         max_cost_usd=args.max_cost_usd,
     )

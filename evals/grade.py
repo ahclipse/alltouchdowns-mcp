@@ -122,6 +122,10 @@ def normalise(item: str, case: Case, franchises: Mapping[str, str]) -> str:
     text = item.strip()
     if case.item_type == "team_abbr":
         return franchises.get(fold(text), fold(text))
+    if case.item_type in ("player_slug", "game_id"):
+        # A slug or a game id never contains a space, so anything after one is commentary
+        # ("torry-holt (WR, 7 TD)"). The identifier is graded; `decorated` reports the rest.
+        text = text.split()[0] if text.split() else ""
     if case.item_type == "game_id":
         return text.upper()
     if case.item_type == "td_type":
@@ -165,6 +169,37 @@ def grounded(
         if not found:
             return False
     return True
+
+
+def decorated(case: Case, answer: FinalAnswer | None) -> bool:
+    """Did a list answer put more than the identifier in an item?
+
+    That breaks the answer format but says nothing about whether the agent found the right
+    thing, so it is counted on its own and not as a wrong answer.
+    """
+    if answer is None or answer.kind != "list" or case.item_type not in ("player_slug", "game_id"):
+        return False
+    return any(len(item.split()) > 1 for item in answer.items)
+
+
+def decline_reason_matches(case: Case, answer: FinalAnswer | None) -> bool | None:
+    """For a question that was rightly declined: was it declined for the right reason?
+    None when the question does not apply. Reported, not graded: any decline is a pass."""
+    if case.expect != "decline" or answer is None or answer.kind != "not_covered":
+        return None
+    return answer.not_covered_reason == case.decline_reason
+
+
+def repeated_calls(calls: Sequence[tuple[str, Mapping[str, object]]]) -> int:
+    """How many tool calls were exact repeats of an earlier call in the same trial. The server
+    is deterministic, so a repeat can never return anything new: it is pure cost."""
+    seen: set[str] = set()
+    repeats = 0
+    for name, arguments in calls:
+        key = f"{name} {sorted(arguments.items())!r}"
+        repeats += key in seen
+        seen.add(key)
+    return repeats
 
 
 def used_expected_tools(case: Case, called: Sequence[str]) -> bool:

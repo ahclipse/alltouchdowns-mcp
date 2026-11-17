@@ -104,6 +104,17 @@ def summarise(run_dir: Path) -> dict[str, Any]:
         "pass_every_trial": _rate(all(results) for results in by_case.values()),
         "tool_calls_per_trial": _mean(len(row["tool_calls"]) for row in rows),
         "over_call_budget": _rate(row["over_budget"] for row in rows),
+        # A call identical to an earlier one in the same trial cannot return anything new.
+        "repeated_call_rate": _rate(
+            index < row["repeated_calls"] for row in rows for index in range(len(row["tool_calls"]))
+        ),
+        # Format and precision, counted apart from correctness.
+        "decorated_answer_rate": _rate(row["decorated_items"] for row in rows),
+        "decline_reason_match_rate": _rate(
+            row["decline_reason_matches"]
+            for row in rows
+            if row["decline_reason_matches"] is not None
+        ),
         "tool_error_rate": _rate(call["is_error"] for call in calls),
         "invalid_argument_rate": _rate(call["error_code"] == "invalid_argument" for call in calls),
         "forced_final_rate": _rate(row["forced_final"] for row in rows),
@@ -113,6 +124,7 @@ def summarise(run_dir: Path) -> dict[str, Any]:
         "input_tokens": sum(row["usage"]["input_tokens"] for row in rows),
         "output_tokens": sum(row["usage"]["output_tokens"] for row in rows),
         "cache_read_tokens": sum(row["usage"]["cache_read_input_tokens"] for row in rows),
+        "cache_write_tokens": sum(row["usage"]["cache_creation_input_tokens"] for row in rows),
         "cost_usd": round(total_cost(rows, errors), 4),
         "failures": _count(row["failure"] for row in rows if row["failure"]),
         "by_category": {
@@ -164,9 +176,16 @@ def markdown(summary: dict[str, Any]) -> str:
         f"| Used an expected tool | {_pct(summary['expected_tools_used'])} |",
         f"| Tool calls per trial | {summary['tool_calls_per_trial']:.1f} |",
         f"| Invalid-argument rate (per tool call) | {_pct(summary['invalid_argument_rate'])} |",
+        f"| Calls that repeated an earlier call exactly | {_pct(summary['repeated_call_rate'])} |",
+        f"| Answers with extra text in a list item (graded on the identifier) | "
+        f"{_pct(summary['decorated_answer_rate'])} |",
+        f"| Declines given for the right reason | {_pct(summary['decline_reason_match_rate'])} |",
         f"| Model time per trial, p50 / p95 | {summary['model_seconds_p50']:.1f} s / "
         f"{summary['model_seconds_p95']:.1f} s |",
         f"| Cost | ${summary['cost_usd']:.2f} |",
+        f"| Tokens: input / output / read from cache / written to cache | "
+        f"{summary['input_tokens']:,} / {summary['output_tokens']:,} / "
+        f"{summary['cache_read_tokens']:,} / {summary['cache_write_tokens']:,} |",
         f"| Cut off at the token limit / refused (both count as wrong) | "
         f"{summary['truncated']} / {summary['refused']} |",
         f"| Trials never completed (failed attempts in all) | {summary['errors']} "
