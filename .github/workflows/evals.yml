@@ -3,9 +3,10 @@ name: Evals
 # Runs the eval suite against real models, which costs money. It never runs on a pull
 # request, so code from outside the repository can never spend anything.
 #
-#   push to main   a cheap smoke run on the smallest model, one trial per case
-#   weekly         the scored run: three models, compared with the stored baseline
-#   by hand        either a free check that sign-in works (the default), or the scored run
+#   push to main    a smoke run on the smallest model, one trial per case (about $0.05)
+#   twice a month   the scored run: three models, three trials per case, compared with the
+#                   stored baseline (about $8.50, measured in a pilot on 2026-11-16)
+#   by hand         either a free check that sign-in works (the default), or the scored run
 #
 # The automatic runs are opt-in: they are skipped until the repository variable EVALS_ENABLED
 # is set to "true" (Settings > Secrets and variables > Actions > Variables). A run started by
@@ -26,7 +27,7 @@ on:
       - "tests/fixtures/**"
       - "uv.lock"
   schedule:
-    - cron: "17 14 * * 2" # Tuesdays, 14:17 UTC
+    - cron: "17 14 1,15 * *" # the 1st and 15th of each month, 14:17 UTC
   workflow_dispatch:
     inputs:
       what:
@@ -38,8 +39,8 @@ on:
         description: "Scored run: trials per case"
         default: "3"
       max_cost_usd:
-        description: "Scored run: stop a model's run before it spends more than this"
-        default: "8"
+        description: "Scored run: stop each model before it spends more than this (empty = its usual cap)"
+        default: ""
 
 permissions:
   contents: read
@@ -74,7 +75,7 @@ jobs:
       - name: Smoke run
         run: >
           uv run python -m evals run --model claude-haiku-5-5 --reps 1
-          --max-cost-usd 1 --out evals/runs/smoke
+          --max-cost-usd 0.25 --out evals/runs/smoke
       - name: Identity token log
         if: failure()
         run: cat "$RUNNER_TEMP/identity-token.log" 2>/dev/null || echo "every refresh succeeded"
@@ -117,7 +118,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        model: [claude-opus-5-5, claude-sonnet-5-5, claude-haiku-5-5]
+        # Each cap is the measured cost of a full run plus about 40%. A run that reaches its
+        # cap stops and is reported as invalid, not as a score. Together the caps come to
+        # $12.50, so two runs a month cannot pass the workspace's $25 limit.
+        include:
+          - { model: claude-opus-5-5, cap: "6.50" } # about $4.60 a run
+          - { model: claude-sonnet-5-5, cap: "5.50" } # about $3.75
+          - { model: claude-haiku-5-5, cap: "0.50" } # about $0.15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
@@ -128,7 +135,7 @@ jobs:
       - name: Run
         env:
           REPS: ${{ inputs.reps || '3' }}
-          MAX_COST: ${{ inputs.max_cost_usd || '8' }}
+          MAX_COST: ${{ inputs.max_cost_usd || matrix.cap }}
         run: >
           uv run python -m evals run --model ${{ matrix.model }} --reps "$REPS"
           --max-cost-usd "$MAX_COST" --out evals/runs/${{ matrix.model }}
