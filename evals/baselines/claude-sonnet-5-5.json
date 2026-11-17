@@ -1,0 +1,15 @@
+{
+  "model": "claude-sonnet-5-5",
+  "effort": "medium",
+  "cases": 131,
+  "cases_hash": "d5572fa443754180",
+  "trials_per_case": 3,
+  "runs": 1,
+  "scores": [
+    0.9821882951653944
+  ],
+  "mean": 0.9821882951653944,
+  "run_to_run_stdev": 0.0,
+  "noise_floor": 0.050443327230531826,
+  "gate": 0.9317449679348626
+}

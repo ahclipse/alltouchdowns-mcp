@@ -60,13 +60,31 @@ The eval suite lives in [`evals/`](evals). An agent (a Claude model) gets the se
 - **The headline is "correct and grounded"**: the answer is right, and it came from a tool result rather than the model's memory. Where a question picks players by an attribute, such as which scorers are quarterbacks, a tool must have shown that attribute for each player named.
 - **Plumbing failures are not scores, and cannot hide them.** A trial the harness could not complete (an API error, a timeout) is recorded separately, retried on the next run, and never counted as a wrong answer. A run counts as a measurement only if at least 98% of its planned trials were graded. A reply that was cut off or refused is the model's own, so it counts as wrong.
 - **The suite checks itself for free.** On every pull request, a scripted "oracle" agent must score 100% and a "null" agent 0% through the real runner, server and grader, and each case's scripted solution must reproduce its ground truth through the real tools. The answer is either read from one field of a result, or worked out from the results by a few lines of Python ([`evals/solutions.py`](evals/solutions.py)).
-- **The pass mark is measured, not chosen.** The gate is set from repeated runs of the current code, below their mean by the larger of twice the run-to-run spread and the noise floor for that many trials.
+- **The pass mark is measured, not chosen.** The gate is set from scored runs of the current code, below their mean by the larger of twice the run-to-run spread and the noise floor for that many trials.
 
 In CI the suite runs against a committed two-season fixture (2007 and 2019), so every question is about those seasons. That limits what it can show: true career totals are not tested, and paging is tested only up to six pages.
 
 In CI the paid runs sign in without a stored API key. GitHub issues each job a short-lived signed token, and the API exchanges it for a short-lived access token under a rule that accepts only this repository's protected environment (workload identity federation).
 
-Scores will be published here once the first baseline has been measured.
+### Scores
+
+Measured in CI on 2026-11-17 at commit `430de68`: 131 cases, three trials per case, 393 trials per model, all of them graded.
+
+| Model | Correct and grounded | Right answer | Core tier | Harder tier | Cases passed in every trial |
+|---|---|---|---|---|---|
+| Claude Opus 5.5 | 98.7% | 100.0% | 99.4% | 96.3% | 129 of 131 |
+| Claude Sonnet 5.5 | 98.2% | 99.2% | 99.7% | 92.6% | 128 of 131 |
+| Claude Haiku 5.5 | 93.4% | 94.9% | 95.2% | 86.4% | 121 of 131 |
+
+How to read them:
+
+- **The two larger models are near the ceiling**, so this is a check that a change to the server has not broken it, not a ranking of models. The 95% intervals are 96.7% to 100%, 95.7% to 100% and 89.1% to 97.2%.
+- **Right but not grounded.** Two cases account for the gap between the first two columns. Every model gave the right answer and took part of it from memory: the list of teams, when asked which teams did not play in a week, and who is a quarterback, when asked which of a team's scorers were. Those trials are not counted.
+- **The wrong answers.** Opus gave none. Sonnet's were one case, three times: asked for a career total, it gave the count for the one season that is loaded. Haiku made the same mistake (3 trials); its others were mostly answers in the wrong shape, a number where a name was asked (12 trials), and declining a question the data does answer (5 trials).
+- **Tool calls.** Sonnet made 2.6 calls a trial, against 1.4 for Opus and 1.6 for Haiku, and went over a case's call budget in 16% of trials, often by repeating a call after it had its answer. That did not change its answers.
+- **The pass mark.** Each baseline is one run so far, so the gate is the noise floor for 393 trials, 5.0 points below the score: 93.7%, 93.2% and 88.3%. The baselines are in [`evals/baselines/`](evals/baselines).
+
+The three runs cost about $12 in all.
 
 ```bash
 uv run python -m evals preflight   # free: are the cases and grader sound?
