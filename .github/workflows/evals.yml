@@ -3,9 +3,9 @@ name: Evals
 # Runs the eval suite against real models, which costs money. It never runs on a pull
 # request, so code from outside the repository can never spend anything.
 #
-#   push to main    a smoke run on the smallest model, one trial per case (about $0.05)
-#   twice a month   the scored run: three models, three trials per case, compared with the
-#                   stored baseline (about $8.50, measured in a pilot on 2026-11-16)
+#   push to main    a smoke run on the smallest model, one trial per case (about $0.10)
+#   once a month    the scored run: three models, three trials per case, compared with the
+#                   stored baseline (about $13, from costs measured on 2026-11-17)
 #   by hand         either a free check that sign-in works (the default), or the scored run
 #
 # The automatic runs are opt-in: they are skipped until the repository variable EVALS_ENABLED
@@ -27,7 +27,7 @@ on:
       - "tests/fixtures/**"
       - "uv.lock"
   schedule:
-    - cron: "17 14 1,15 * *" # the 1st and 15th of each month, 14:17 UTC
+    - cron: "17 14 1 * *" # the 1st of each month, 14:17 UTC
   workflow_dispatch:
     inputs:
       what:
@@ -118,13 +118,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Each cap is the measured cost of a full run plus about 40%. A run that reaches its
-        # cap stops and is reported as invalid, not as a score. Together the caps come to
-        # $12.50, so two runs a month cannot pass the workspace's $25 limit.
+        # Each cap is three times the measured cost of one trial per case, with room on top.
+        # Some of that room is used by the runner itself: it stops starting trials once what
+        # is spent, plus four trials as dear as the dearest so far, would pass the cap. A run
+        # that reaches its cap stops and is reported as invalid, not as a score. Together the
+        # caps come to $16.50, which leaves room for the smoke runs under the workspace's $25
+        # monthly limit. That limit is the last stop, whatever runs.
         include:
-          - { model: claude-opus-5-5, cap: "6.50" } # about $4.60 a run
-          - { model: claude-sonnet-5-5, cap: "5.50" } # about $3.75
-          - { model: claude-haiku-5-5, cap: "0.50" } # about $0.15
+          - { model: claude-opus-5-5, cap: "9.50" } # about $7.65 a run
+          - { model: claude-sonnet-5-5, cap: "6.50" } # about $4.90
+          - { model: claude-haiku-5-5, cap: "0.50" } # about $0.30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
